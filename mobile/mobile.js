@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MANNEQUIN_INFO, MANNEQUIN_PRESETS, normalizeParams, buildMannequinBody } from '../src/mannequin.mjs';
-import { loadDefaultMotions } from '../src/motions.mjs';
+import { loadDefaultMotions, retargetClips } from '../src/motions.mjs';
 import { loadScriptedMotions, SCRIPT_LABELS, SCRIPT_GROUPS } from '../src/motion_scripts.mjs';
 import { loadQuaterniusSources, createQuaterniusRetargeter, QUATERNIUS_LABELS, QUATERNIUS_GROUPS } from '../src/motion_library.mjs';
 import { CLEARANCE_SETTINGS, KEEP_SHAPE_GROUPS, GROUND_SETTINGS, OFFSET_JOINTS, OFFSET_AXES,
   defaultTuning, normalizeTuning, retargetOptions } from '../src/motion_tuning.mjs';
 import { mannequinVolumes } from '../src/body_volumes.mjs';
 import { clearArms } from '../src/arm_clearance.mjs';
-import { updateHelpers } from '../src/skin.mjs';
+import { updateHelpers, setPose } from '../src/skin.mjs';
 import { exportGlb } from '../src/export_glb.mjs';
 import { writeSettingsFile, readSettingsFile } from '../src/settings_file.mjs';
+import { buildCustomClip } from '../src/custom_motion.mjs';
+import { createMobileMake } from './mobile_make.js';
 import { STANDARD_NAMES, defaultState, normalizeState, serializeState, parseState, applySettingsFile, motionGroups, exportNames } from './mobile_state.mjs';
 
 const STORAGE_KEY = 'moju.mobile.v1';
@@ -28,18 +30,26 @@ export async function start() {
   let state;
   try { state = parseState(localStorage.getItem(STORAGE_KEY)); }
   catch { state = defaultState(); }
-  const catalog = motionGroups({ standardNames: STANDARD_NAMES, scriptGroups: SCRIPT_GROUPS,
-    scriptLabels: SCRIPT_LABELS, quaterniusGroups: QUATERNIUS_GROUPS, quaterniusLabels: QUATERNIUS_LABELS });
-  const allRows = catalog.flatMap(group => group.rows ?? group.groups.flatMap(child => child.rows));
-  const allNames = allRows.map(row => row.name);
-  const labels = new Map(allRows.map(row => [row.name, row.label]));
+  let catalog, allRows, allNames;
+  const labels = new Map();
+  function refreshCatalog() {
+    catalog = motionGroups({ standardNames: STANDARD_NAMES, custom: state.custom, scriptGroups: SCRIPT_GROUPS,
+      scriptLabels: SCRIPT_LABELS, quaterniusGroups: QUATERNIUS_GROUPS, quaterniusLabels: QUATERNIUS_LABELS });
+    allRows = catalog.flatMap(group => group.rows ?? group.groups.flatMap(child => child.rows));
+    allNames = allRows.map(row => row.name);
+    labels.clear();
+    for (const row of allRows) labels.set(row.name, row.label);
+  }
+  refreshCatalog();
   function cleanState(value) {
     const clean = normalizeState(value);
     clean.params = normalizeParams(clean.params, clean.preset);
     clean.tuning = normalizeTuning(clean.tuning);
     clean.speed = SPEEDS.reduce((nearest, speed) => Math.abs(speed - clean.speed) < Math.abs(nearest - clean.speed) ? speed : nearest, 1);
-    clean.included = clean.included.filter(name => labels.has(name));
-    if (!labels.has(clean.selectedMotion)) clean.selectedMotion = 'Idle';
+    const available = new Set([...allNames.filter(name => !name.startsWith('u/')),
+      ...clean.custom.map(motion => `u/${motion.name}`)]);
+    clean.included = clean.included.filter(name => available.has(name));
+    if (!available.has(clean.selectedMotion)) clean.selectedMotion = 'Idle';
     return clean;
   }
   state = cleanState(state);
@@ -88,6 +98,36 @@ export async function start() {
   controls.maxDistance = 15;
   controls.touches.ONE = THREE.TOUCH.ROTATE;
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+  $('#viewer').addEventListener('pointerdown', () => { $('.gesture-hint').hidden = true; }, { once: true });
+  let framedSize = '', framingBounds = null;
+  function fitCamera(reset = false) {
+    if (!context) return;
+    const body = context.body, height = state.params.height;
+    // 立ち姿の幅・奥行きと、腕を頭上へ伸ばしたときの高さを囲む。
+    const bounds = framingBounds.clone();
+    const joint = name => new THREE.Vector3(...body.joints.find(item => item.name === name).position);
+    const shoulder = joint('LeftUpperArm'), elbow = joint('LeftLowerArm'), hand = joint('LeftHand');
+    bounds.max.y = Math.max(height, shoulder.y + shoulder.distanceTo(elbow) + elbow.distanceTo(hand) + height * 0.06);
+    bounds.min.y = Math.min(0, bounds.min.y);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const direction = reset ? new THREE.Vector3(1, 0.06, 2).normalize()
+      : camera.position.clone().sub(controls.target).normalize();
+    if (direction.lengthSq() < 1e-8) direction.set(1, 0.06, 2).normalize();
+    const right = new THREE.Vector3().crossVectors(camera.up, direction).normalize();
+    const up = new THREE.Vector3().crossVectors(direction, right).normalize();
+    const tangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.85;
+    let distance = 0;
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        const offset = new THREE.Vector3(x, y, z).sub(center);
+        distance = Math.max(distance, offset.dot(direction) + Math.max(
+          Math.abs(offset.dot(up)) / tangent, Math.abs(offset.dot(right)) / (tangent * camera.aspect)));
+      }
+    }
+    controls.target.copy(center);
+    camera.position.copy(center).addScaledVector(direction, distance);
+    controls.update();
+  }
   function resize() {
     const width = Math.max(1, $('#viewer').clientWidth);
     const height = Math.max(1, $('#viewer').clientHeight);
@@ -95,14 +135,18 @@ export async function start() {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    if (framedSize !== `${width}/${height}`) {
+      framedSize = `${width}/${height}`;
+      fitCamera();
+    }
     renderer.render(scene, camera);
   }
   new ResizeObserver(resize).observe($('#viewer'));
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
 
-  let context, mixer, activeClip;
-  let playing = true, time = 0, selectionRequest = 0;
+  let context, mixer, activeClip, makeEditor;
+  let playing = true, time = 0, selectionRequest = 0, editingMotion = null;
   let quaterniusPromise = null, quaterniusRetargeter = null, quaterniusDetails, quaterniusContent;
   let quaterniusRowsShown = false;
   const rowButtons = new Map();
@@ -127,7 +171,8 @@ export async function start() {
   function makeContext(body, snapshot) {
     const params = normalizeParams(snapshot.params, snapshot.preset);
     const options = retargetOptions(snapshot.tuning);
-    return { body, params, options, standard: null, scripts: null, volumes: null, clips: new Map() };
+    return { body, params, options, custom: structuredClone(snapshot.custom),
+      standard: null, scripts: null, volumes: null, clips: new Map() };
   }
   function disposeBody(body) {
     const materials = new Set();
@@ -175,6 +220,16 @@ export async function start() {
         quaterniusDetails.open = true;
         await ensureQuaternius();
         clip = quaterniusRetargeter(name, target.body.joints, target.options);
+      } else if (name.startsWith('u/')) {
+        const motion = target.custom.find(item => `u/${item.name}` === name);
+        if (motion) {
+          // 同じ素体の立ち姿を元に、既存の関節調整・接地処理へ渡す。
+          const sourceBody = buildMannequinBody(target.params);
+          try {
+            clip = retargetClips({ scene: sourceBody.group, clips: [buildCustomClip(motion, sourceBody.joints)] },
+              target.body.joints, target.options)[0];
+          } finally { disposeBody(sourceBody); }
+        }
       } else if (name.startsWith('s/')) {
         target.scripts ??= loadScriptedMotions(target.body.joints, target.options);
         clip = target.scripts.find(item => item.name === name);
@@ -197,7 +252,7 @@ export async function start() {
     $('#play').setAttribute('aria-pressed', String(playing));
   }
   function updateTime() {
-    const duration = activeClip?.duration ?? 0;
+    const duration = editingMotion?.duration ?? activeClip?.duration ?? 0;
     $('#timeline').max = String(duration || 1);
     $('#timeline').value = String(time);
     $('#time-value').textContent = `${time.toFixed(2)} / ${duration.toFixed(2)} 秒`;
@@ -209,6 +264,7 @@ export async function start() {
     context.body.group.updateMatrixWorld(true);
   }
   async function selectMotion(name, restart = true) {
+    editingMotion = null;
     const request = ++selectionRequest;
     const target = context;
     state.selectedMotion = name;
@@ -253,13 +309,12 @@ export async function start() {
     activeClip = null;
     context = makeContext(nextBody, state);
     scene.add(nextBody.group);
+    framingBounds = new THREE.Box3().setFromObject(nextBody.group);
     if (previous) { scene.remove(previous.group); disposeBody(previous); }
-    const height = state.params.height;
-    controls.target.set(0, height * 0.5, 0);
-    camera.position.set(height * 1.5, height * 1.1, height * 2.5);
-    controls.update();
     resize();
-    await selectMotion(state.selectedMotion);
+    fitCamera(true);
+    if ($('#tab-make').getAttribute('aria-selected') === 'true') makeEditor.refresh();
+    else await selectMotion(state.selectedMotion);
   }
   async function rebuildMotion() {
     context = makeContext(context.body, state);
@@ -404,6 +459,9 @@ export async function start() {
     }
   }
   function renderMotions() {
+    $('#motion-list').replaceChildren();
+    rowButtons.clear(); rowChecks.clear(); motionSections.length = 0; searchOpenStates.clear();
+    quaterniusRowsShown = false;
     for (const group of catalog.slice(0, -1)) renderMotionGroup(group, $('#motion-list'), true);
     const section = motionAccordion(catalog.at(-1), $('#motion-list'));
     quaterniusDetails = section.details;
@@ -418,6 +476,11 @@ export async function start() {
       if (state.selectedMotion.startsWith('q')) await selectMotion(state.selectedMotion);
     }));
     quaterniusContent.append(note, retry);
+    if (quaterniusRetargeter) {
+      for (const child of catalog.at(-1).groups) renderMotionGroup(child, quaterniusContent, false);
+      quaterniusRowsShown = true;
+      note.textContent = '読み込みました。動きの名前を押すと再生します。';
+    }
     quaterniusDetails.addEventListener('toggle', () => {
       if (quaterniusDetails.open) guard(ensureQuaternius);
     });
@@ -426,19 +489,24 @@ export async function start() {
   }
   $('#motion-search').addEventListener('input', filterMotions);
 
-  const tabNames = ['body', 'motion', 'tuning', 'export'];
+  const tabNames = ['body', 'motion', 'make', 'tuning', 'export'];
   function showTab(name) {
+    $('main').dataset.tab = name;
     for (const tab of tabNames) {
       $(`#panel-${tab}`).hidden = tab !== name;
       $(`#tab-${tab}`).setAttribute('aria-selected', String(tab === name));
       $(`#tab-${tab}`).tabIndex = tab === name ? 0 : -1;
     }
+    makeEditor?.setActive(name === 'make');
+    if (name !== 'make' && editingMotion) guard(() => selectMotion(state.selectedMotion, false));
+    $('#panels').scrollTop = 0;
   }
   tabNames.forEach((name, index) => {
     $(`#tab-${name}`).addEventListener('click', () => showTab(name));
     $(`#tab-${name}`).addEventListener('keydown', event => {
-      const next = event.key === 'ArrowRight' ? (index + 1) % 4 : event.key === 'ArrowLeft' ? (index + 3) % 4
-        : event.key === 'Home' ? 0 : event.key === 'End' ? 3 : null;
+      const next = event.key === 'ArrowRight' ? (index + 1) % tabNames.length
+        : event.key === 'ArrowLeft' ? (index + tabNames.length - 1) % tabNames.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? tabNames.length - 1 : null;
       if (next === null) return;
       event.preventDefault(); showTab(tabNames[next]); $(`#tab-${tabNames[next]}`).focus();
     });
@@ -456,8 +524,13 @@ export async function start() {
     const option = element('option', joint.label); option.value = joint.name; return option;
   }));
   $('#offset-joint').addEventListener('change', renderOffsets);
-  $('#play').addEventListener('click', () => { playing = !playing; updatePlayButton(); });
+  $('#play').addEventListener('click', () => {
+    if (!activeClip && state.custom.some(motion => `u/${motion.name}` === state.selectedMotion)) {
+      guard(() => selectMotion(state.selectedMotion));
+    } else { playing = !playing; updatePlayButton(); }
+  });
   $('#timeline').addEventListener('input', () => {
+    if (editingMotion) { makeEditor.seek(Number($('#timeline').value)); return; }
     time = Math.min(activeClip?.duration ?? 0, Number($('#timeline').value));
     applyTime(); updateTime();
   });
@@ -494,6 +567,8 @@ export async function start() {
     try {
       const settings = readSettingsFile(await file.text());
       Object.assign(state, cleanState(applySettingsFile(state, settings)));
+      refreshCatalog(); renderMotions();
+      makeEditor.refresh({ clearHistory: true });
       renderBodySettings(); renderTuning();
       for (const [name, check] of rowChecks) check.checked = state.included.includes(name);
       refreshFields(); remember();
@@ -540,6 +615,50 @@ export async function start() {
     $('#export-name').value = state.name;
     updateExportCount();
   }
+  makeEditor = createMobileMake({
+    panel: $('#panel-make'), viewer: $('#viewer'), camera,
+    getState: () => state, getBody: () => context?.body,
+    guard, preview: name => selectMotion(name),
+    onChange(catalogChanged) {
+      if (context) {
+        context.custom = structuredClone(state.custom);
+        context.clips.clear();
+      }
+      if (catalogChanged) { refreshCatalog(); renderMotions(); }
+      renderOffsets(); remember();
+    },
+    onPose(sourceBody, motion, poseTime = 0) {
+      ++selectionRequest;
+      playing = false;
+      if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(context.body.group); mixer = null; }
+      activeClip = null; editingMotion = motion; time = poseTime;
+      $('#timeline').disabled = !motion;
+      $('#play').disabled = !motion;
+      if (sourceBody && context) {
+        for (const [name, bone] of Object.entries(sourceBody.bones)) {
+          context.body.bones[name].position.copy(bone.position);
+          context.body.bones[name].quaternion.copy(bone.quaternion);
+        }
+        updateHelpers(context.body); context.body.group.updateMatrixWorld(true);
+        const selectedName = `u/${motion.name}`;
+        const changed = state.selectedMotion !== selectedName;
+        state.selectedMotion = selectedName;
+        $('#current-motion').textContent = `${motion.label}・コマを編集中`;
+        for (const [name, button] of rowButtons) button.setAttribute('aria-pressed', String(name === state.selectedMotion));
+        if (changed) { renderOffsets(); remember(false); }
+      } else if (context) {
+        setPose(context.body.bones, {}, context.body.helpers);
+        const hips = context.body.joints.find(joint => joint.name === 'Hips').position;
+        const root = context.body.joints.find(joint => joint.name === 'Root').position;
+        context.body.bones.Hips.position.fromArray(hips).sub(new THREE.Vector3(...root));
+        context.body.group.updateMatrixWorld(true);
+        $('#current-motion').textContent = '立ち姿・新しく動きを作れます';
+      }
+      clearError(); status(''); updatePlayButton(); updateTime();
+    },
+  });
+  window.__mobile.make = { select: makeEditor.select, state: makeEditor.state };
+  makeEditor.refresh();
   renderBodySettings(); renderTuning(); renderMotions(); refreshFields();
   // 読めない場合も初期表示の「手元の開発版」を残し、編集を続ける。
   fetch(new URL('../version.json', import.meta.url), { cache: 'no-store' })
@@ -560,6 +679,7 @@ export async function start() {
       applyTime(); updateTime();
     }
     controls.update();
+    makeEditor.updateOverlay();
     renderer.render(scene, camera);
   });
   await rebuildBody();

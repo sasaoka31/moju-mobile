@@ -88,3 +88,48 @@ export function armSamples(volumes, side, world) {
     { point: hand.position.clone().addScaledVector(direction, volumes.arm.hand), radius: volumes.arm.hand },
   ];
 }
+
+/** 脚の断面表から作る当たり用の半径。既存の腕・胴の近似とは独立。 */
+export function legVolumes(p, joints) {
+  const rest = Object.fromEntries(joints.map(j => [j.name, V(...j.position)]));
+  const scale = rest.LeftLowerLeg.y / (BASE.joints.kneeY * p.legLen);
+  const radius = height => {
+    const row = rowAt(BASE.leg, height);
+    const foot = MathUtils.lerp(p.footSize, 1,
+      ease(BASE.joints.ankleY - 0.02, BASE.joints.ankleY, height));
+    return Math.max(row[2], (row[3] + row[4]) * foot / 2) * p.legR * scale;
+  };
+  return Object.fromEntries(['Left', 'Right'].map(side => [side, [
+    { name: side + 'UpperLeg', radius: radius(BASE.leg.at(-1)[0]) },
+    { name: side + 'LowerLeg', radius: radius(BASE.joints.kneeY) },
+    { name: side + 'Foot', radius: radius(BASE.joints.ankleY) },
+    { name: side + 'Toes', radius: radius(BASE.joints.ankleY / 2) },
+  ]]));
+}
+
+export function legSamples(legs, side, world) {
+  const get = name => world instanceof Map ? world.get(name) : world[name];
+  const [, knee, ankle, toes] = legs[side];
+  const point = end => get(end.name).position.clone();
+  return [
+    { point: point(knee), radius: knee.radius },
+    { point: point(knee).lerp(point(ankle), 0.5), radius: (knee.radius + ankle.radius) / 2 },
+    { point: point(ankle), radius: ankle.radius },
+    { point: point(toes), radius: toes.radius },
+  ];
+}
+
+/** 太さが変わる3本のカプセルで片脚へのめり込みを測る。 */
+export function legPenetration(legs, side, point, radius, world) {
+  const get = name => (world instanceof Map ? world.get(name) : world[name]).position;
+  const chain = legs[side];
+  let depth = 0;
+  for (let i = 1; i < chain.length; i++) {
+    const a = chain[i - 1], b = chain[i];
+    const start = get(a.name), axis = get(b.name).clone().sub(start);
+    const t = MathUtils.clamp(point.clone().sub(start).dot(axis) / (axis.lengthSq() || 1), 0, 1);
+    const distance = point.distanceTo(start.clone().addScaledVector(axis, t));
+    depth = Math.max(depth, MathUtils.lerp(a.radius, b.radius, t) + radius - distance);
+  }
+  return depth;
+}

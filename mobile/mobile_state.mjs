@@ -1,6 +1,7 @@
 // 保存値は描画を行わず、素体・動きと同じ定義で正規化する。
 import { MANNEQUIN_COLORS, normalizeParams } from '../src/mannequin.mjs';
 import { normalizeTuning } from '../src/motion_tuning.mjs';
+import { normalizeCustomMotion } from '../src/custom_motion.mjs';
 
 export const STANDARD_NAMES = Object.freeze(['Idle', 'Walk', 'Run', 'Jump', 'Melee', 'Aim', 'Hurt']);
 const STANDARD_LABELS = { Idle: '立つ', Walk: '歩く', Run: '走る', Jump: '跳ぶ', Melee: 'なぐる', Aim: '構える', Hurt: 'やられる' };
@@ -8,7 +9,12 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const number = (value, initial, min, max) => typeof value === 'number' && Number.isFinite(value)
   ? Math.max(min, Math.min(max, value)) : initial;
 const motionName = value => typeof value === 'string' && (STANDARD_NAMES.includes(value)
-  || /^(s|q1|q2)\/[A-Za-z0-9_][A-Za-z0-9_-]{0,127}$/.test(value));
+  || /^(s|u|q1|q2)\/[A-Za-z0-9_][A-Za-z0-9_-]{0,127}$/.test(value));
+
+const customList = value => {
+  const motions = (Array.isArray(value) ? value : []).map(normalizeCustomMotion);
+  return [...new Map(motions.map(motion => [motion.name, motion])).values()].slice(0, 50);
+};
 
 export function defaultState() {
   return normalizeState({});
@@ -31,7 +37,7 @@ export function normalizeState(value) {
     ? [...new Set(input.included.filter(motionName))] : [...STANDARD_NAMES];
   const name = typeof input.name === 'string'
     ? input.name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').trim().slice(0, 64) || 'moju' : 'moju';
-  return { version: 1, preset, params, colors, tuning, included,
+  return { version: 1, preset, params, colors, tuning, included, custom: customList(input.custom),
     selectedMotion: motionName(input.selectedMotion) ? input.selectedMotion : 'Idle',
     name, speed: number(input.speed, 1, 0.1, 2) };
 }
@@ -49,11 +55,12 @@ export function parseState(text) {
 export function applySettingsFile(state, settings) {
   return normalizeState({ ...state, preset: settings.preset, params: settings.params,
     colors: { ...state.colors, ...settings.colors },
-    tuning: settings.tuning ?? state.tuning, included: settings.included ?? state.included });
+    tuning: settings.tuning ?? state.tuning, included: settings.included ?? state.included,
+    custom: settings.custom == null ? state.custom : customList([...customList(state.custom), ...customList(settings.custom)]) });
 }
 
 /** 上からの表示順。Quaternius の中には素材ごとの小見出しを持つ。 */
-export function motionGroups({ standardNames = STANDARD_NAMES, scriptGroups = [], scriptLabels = {},
+export function motionGroups({ standardNames = STANDARD_NAMES, custom = [], scriptGroups = [], scriptLabels = {},
   quaterniusGroups = [], quaterniusLabels = {} } = {}) {
   const rows = (motions, labels) => motions.map(motion => {
     const name = typeof motion === 'string' ? motion : motion.name;
@@ -61,6 +68,7 @@ export function motionGroups({ standardNames = STANDARD_NAMES, scriptGroups = []
   });
   return [
     { label: '標準', rows: rows(standardNames, STANDARD_LABELS) },
+    { label: '自分で作った動き', rows: customList(custom).map(motion => ({ name: `u/${motion.name}`, label: motion.label })) },
     ...scriptGroups.map(group => ({ label: `自作: ${group.label}`, rows: rows(group.motions, scriptLabels) })),
     { label: 'Quaternius', groups: quaterniusGroups.map(group =>
       ({ label: group.label, rows: rows(group.motions, quaterniusLabels) })) },

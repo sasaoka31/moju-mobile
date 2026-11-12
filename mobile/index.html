@@ -52,6 +52,7 @@
         <p id="motion-empty" role="status" hidden>当てはまる動きがありません。</p>
         <div id="motion-list"></div>
       </section>
+      <section id="panel-make" role="tabpanel" aria-labelledby="tab-make" hidden></section>
       <section id="panel-tuning" role="tabpanel" aria-labelledby="tab-tuning" hidden>
         <h2>調整</h2><p>つまみを離すと、いまの動きを作り直して反映します。</p>
         <div id="tuning-settings"></div>
@@ -79,6 +80,7 @@
   <nav id="tabs" role="tablist" aria-label="編集する項目">
     <button id="tab-body" role="tab" aria-controls="panel-body" aria-selected="true" type="button">素体</button>
     <button id="tab-motion" role="tab" aria-controls="panel-motion" aria-selected="false" tabindex="-1" type="button">動き</button>
+    <button id="tab-make" role="tab" aria-controls="panel-make" aria-selected="false" tabindex="-1" type="button">作る</button>
     <button id="tab-tuning" role="tab" aria-controls="panel-tuning" aria-selected="false" tabindex="-1" type="button">調整</button>
     <button id="tab-export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1" type="button">書き出す</button>
   </nav>
