@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3eb">
+  <title>Moju スマホ版</title>
+  <link rel="stylesheet" href="./mobile.css">
+  <script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/build/three.module.js",
+    "three/addons/": "../vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+  <main>
+    <section id="viewer" aria-label="素体の立体表示">
+      <h1>Moju スマホ版</h1>
+      <p class="gesture-hint">指１本で回す · ２本で拡大・移動</p>
+    </section>
+    <section class="transport" aria-label="動きの再生">
+      <div class="play-row">
+        <button id="play" type="button" disabled>再生</button>
+        <span id="current-motion">読み込み中…</span>
+        <button id="speed" type="button" aria-label="速さ 1 倍。押すと切り替え"><span id="speed-value">1 倍</span></button>
+      </div>
+      <div class="time-row">
+        <label for="timeline" class="visually-hidden">再生する時間</label>
+        <input id="timeline" type="range" min="0" max="1" step="0.01" value="0" disabled>
+        <output id="time-value" for="timeline">0.00 / 0.00 秒</output>
+      </div>
+    </section>
+    <div id="panels">
+      <p id="status" role="status" aria-live="polite">素体を準備しています…</p>
+      <p id="error" role="alert" hidden></p>
+      <section id="panel-body" role="tabpanel" aria-labelledby="tab-body">
+        <h2>素体</h2>
+        <label for="preset">素体の種類</label>
+        <select id="preset"><option value="male">男型</option><option value="female">女型</option></select>
+        <p>体の長さや幅を変えると、関節の位置も変わります。この素体の関節は数字で決まります。</p>
+        <button id="reset-body" type="button">全部を初期値に戻す</button>
+        <div id="body-settings"></div>
+      </section>
+      <section id="panel-motion" role="tabpanel" aria-labelledby="tab-motion" hidden>
+        <h2 class="visually-hidden">動き</h2>
+        <label for="motion-search" class="visually-hidden">動きをさがす</label>
+        <input id="motion-search" type="search" placeholder="動きをさがす" autocomplete="off" aria-controls="motion-list">
+        <p class="motion-hint">右のチェックを入れた動きが書き出しに入ります</p>
+        <p id="motion-empty" role="status" hidden>当てはまる動きがありません。</p>
+        <div id="motion-list"></div>
+      </section>
+      <section id="panel-tuning" role="tabpanel" aria-labelledby="tab-tuning" hidden>
+        <h2>調整</h2><p>つまみを離すと、いまの動きを作り直して反映します。</p>
+        <div id="tuning-settings"></div>
+        <details open><summary>関節の角度の足し引き(いま選んでいる動きだけ)</summary>
+          <div class="detail-content"><p id="offset-motion"></p>
+            <label for="offset-joint">関節</label><select id="offset-joint"></select>
+            <div id="offset-settings"></div>
+          </div>
+        </details>
+      </section>
+      <section id="panel-export" role="tabpanel" aria-labelledby="tab-export" hidden>
+        <h2>書き出す</h2>
+        <label for="export-name">名前</label><input id="export-name" type="text" value="moju" maxlength="64" autocomplete="off">
+        <p id="export-count">入る動き: 7 個</p><p id="export-size">ファイルの大きさ: 作成後に表示します</p>
+        <button id="export-glb" class="primary" type="button">ゲーム用に書き出す(.glb)</button>
+        <div class="settings-files">
+          <button id="save-settings" type="button">設定をファイルに保存(.json)</button>
+          <button id="load-settings" type="button">設定を読み込む</button>
+          <input id="settings-file" type="file" accept=".json,application/json" hidden>
+        </div>
+      </section>
+    </div>
+  </main>
+  <nav id="tabs" role="tablist" aria-label="編集する項目">
+    <button id="tab-body" role="tab" aria-controls="panel-body" aria-selected="true" type="button">素体</button>
+    <button id="tab-motion" role="tab" aria-controls="panel-motion" aria-selected="false" tabindex="-1" type="button">動き</button>
+    <button id="tab-tuning" role="tab" aria-controls="panel-tuning" aria-selected="false" tabindex="-1" type="button">調整</button>
+    <button id="tab-export" role="tab" aria-controls="panel-export" aria-selected="false" tabindex="-1" type="button">書き出す</button>
+  </nav>
+  <script>
+    (() => {
+      const report = reason => {
+        const box = document.querySelector('#error');
+        box.hidden = false;
+        box.textContent = `スマホ版を動かせませんでした: ${reason?.message ?? reason}`;
+        document.querySelector('#panels').scrollTop = 0;
+      };
+      let resolveReady, rejectReady;
+      window.__mobile = { state: null, ready: new Promise((resolve, reject) => {
+        resolveReady = resolve; rejectReady = reject;
+      }), clipNames: () => [] };
+      window.__mobile.ready.catch(() => {});
+      addEventListener('error', event => report(event.error ?? event.message));
+      addEventListener('unhandledrejection', event => report(event.reason));
+      import('./mobile.js').then(module => module.start()).then(resolveReady, error => {
+        report(error); rejectReady(error);
+      });
+    })();
+  </script>
+</body>
+</html>
