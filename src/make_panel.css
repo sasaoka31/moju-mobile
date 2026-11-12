@@ -36,10 +36,10 @@
 .make-motion-row:empty { display: none; }
 .make-motion-menu .make-new { grid-column: 1 / -1; }
 .make-motion-row select { font-size: 14px; padding: 4px 6px; }
-.make-key-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 106px; gap: 4px; }
+.make-key-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px; }
 .make-keys { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
 .make-keys button { flex: none; min-width: 44px; white-space: nowrap; padding: 4px 6px; font-size: 13px; }
-.make-preview { padding: 4px; font-size: 12px; white-space: nowrap; }
+.make-preview { padding: 4px; font-size: 13px; }
 .make-key-time { display: grid; grid-template-columns: 44px minmax(0, 1fr) 98px; align-items: center; gap: 4px; position: relative; }
 .make-key-time label { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
 .make-key-time output { font-size: 11px; }
@@ -49,6 +49,8 @@
 .make-pose-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 2px; }
 .make-field { display: flex; align-items: center; gap: 3px; min-width: 0; }
 .make-field > label { flex: none; font-size: 11px; max-width: 44px; line-height: 1.1; }
+
+.make-field > .make-check { flex: 1; max-width: none; min-width: 0; line-height: 1.2; }
 .make-field select { flex: 1; width: 0; font-size: 12px; padding: 4px 0; }
 .make-modes { display: grid; grid-template-columns: 36px 1fr 1fr; gap: 3px; align-items: center; }
 .make-modes > span { font-size: 11px; line-height: 1.1; }

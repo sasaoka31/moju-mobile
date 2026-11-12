@@ -218,7 +218,9 @@ function walkAngle(session, state, { joint, axis }, direction, destination) {
   const threshold = contactDepth(session, state) + 0.001;
   let accepted = copyState(state), angle = value;
   for (let step = 1; Math.abs(end - value) > 0; step++) {
-    const next = value + direction * Math.min(step, Math.abs(end - value));
+    // 小数の角度では value + (end - value) が end とぴったり同じにならず、終わらなくなる。
+    // 残りが 1 歩以下なら end そのものを使う。
+    const next = step >= Math.abs(end - value) ? end : value + direction * step;
     const candidate = copyState(state);
     candidate.pose[joint] ??= [0, 0, 0];
     candidate.pose[joint][index] = next;

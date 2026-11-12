@@ -239,7 +239,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     const keys = node('section', undefined, 'make-section make-key-section'); panel.append(keys);
     const keyToolbar = node('div', undefined, 'make-key-toolbar'); keys.append(keyToolbar);
     const keyRow = node('div', undefined, 'make-keys'); keyToolbar.append(keyRow);
-    const previewButton = button(keyToolbar, '再生して確かめる', () => { finishGesture(); return preview(`u/${selectedName}`); });
+    const previewButton = button(keyToolbar, '再生する', () => { finishGesture(); return preview(`u/${selectedName}`); });
     previewButton.className = 'make-preview';
     current.keys.forEach((key, index) => button(keyRow,
       index === 0 ? '最初' : index === current.keys.length - 1 ? '最後' : `中間 ${key.t.toFixed(2)}秒`,
