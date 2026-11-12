@@ -125,8 +125,8 @@ const entry = (name, chain) => Object.freeze({ name, chain: Object.freeze(chain)
 export const MANNEQUIN_PARTS = Object.freeze([
   entry('頭', ['Neck', 'Head']),
   entry('胴', ['Hips', 'Spine', 'Chest', 'UpperChest']),
-  entry('左腕', ['LeftUpperArm', 'LeftLowerArm', 'LeftHand']),
-  entry('右腕', ['RightUpperArm', 'RightLowerArm', 'RightHand']),
+  entry('左腕', ['LeftUpperArm', 'LeftLowerArm', 'LeftHand', 'UpperChest']),
+  entry('右腕', ['RightUpperArm', 'RightLowerArm', 'RightHand', 'UpperChest']),
   entry('左脚', ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot', 'LeftToes']),
   entry('右脚', ['RightUpperLeg', 'RightLowerLeg', 'RightFoot', 'RightToes']),
 ]);
@@ -348,7 +348,13 @@ function armSurface(p, joints, band) {
   return {
     shape: sweep(origin.clone().addScaledVector(axis, -radius), sections,
       origin.clone().addScaledVector(axis, last.t).add(V(0, 0, last.z))),
-    weights: point => chainWeights(point.clone().sub(origin).dot(axis), cuts, band),
+    weights: point => {
+      const t = point.clone().sub(origin).dot(axis);
+      if (t >= 0) return chainWeights(t, cuts, band);
+      // 胴内の球冠と軸は鎖骨から独立させ、肩の輪まで上腕へ滑らかに渡す。
+      const armWeight = ease(-radius * 0.55, 0, t);
+      return [[3, 1 - armWeight], [0, armWeight]];
+    },
   };
 }
 

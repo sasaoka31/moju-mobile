@@ -168,13 +168,61 @@ function positionWalk(session, state, { joint, axis, chain = 1, pinFeet = true }
   const threshold = contactDepth(session, state) + 0.001;
   const count = Math.max(1, Math.min(4, Math.floor(chain) || 1));
   const feet = joint === 'Hips' && pinFeet ? pinnedFeet(session, state) : null;
-  return { state, joint, index, origin, threshold, count, feet, limit: joint === 'Hips' ? 0.5 : 0.8 };
+  const counts = [];
+  if (chain === 'auto' && joint !== 'Hips') {
+    // solvePoseIK と同じ実際の親経路を数え、Hips 以降の重複候補を省く。
+    for (let bone = session.body.bones[joint].parent; bone && counts.length < 6; bone = bone.parent) {
+      if (bone.name === 'Hips' || bone.name === 'Root' || session.body.bones[bone.name] !== bone) break;
+      counts.push(counts.length + 1);
+    }
+  }
+  const outside = joint.startsWith('Right') ? -1 : 1;
+  const detours = [[2, 1], [0, outside], [1, 1], [2, -1], [0, -outside], [1, -1]]
+    .filter(([offsetAxis]) => offsetAxis !== index);
+  return { state, joint, index, origin, threshold, count, counts: chain === 'auto' ? counts : null,
+    detours, feet, limit: joint === 'Hips' ? 0.5 : 0.8 };
+}
+
+function acceptPosition(session, walk, accepted, direction, target, candidate) {
+  const { joint, index, threshold } = walk;
+  const actual = jointPosition(session, candidate, joint);
+  const requested = direction * (target[index] - accepted.value);
+  if (direction * (actual[index] - accepted.value) < Math.min(0.001, requested * 0.2) - 1e-10 ||
+      contactDepth(session, candidate) > threshold + 1e-10) return null;
+  return { state: candidate, value: actual[index] };
+}
+
+function autoPositionStep(session, walk, accepted, direction, target) {
+  const attempt = (goal, count) => {
+    // 不採用の試行は次の候補に引き継がない。
+    const candidate = copyState(accepted.state);
+    pullJoint(session, candidate, walk.joint, goal, count);
+    return acceptPosition(session, walk, accepted, direction, goal, candidate);
+  };
+  for (const count of walk.counts) {
+    const next = attempt(target, count);
+    if (next) return next;
+  }
+  // 回り道は最大3種類の長さに絞る。短い腕の経路と最も長い経路を残す。
+  const counts = walk.counts.length <= 3 ? walk.counts : [walk.counts[0], walk.counts[1], walk.counts.at(-1)];
+  for (const [axis, sign] of walk.detours) {
+    for (const offset of [0.01, 0.03, 0.09]) {
+      const goal = [...target];
+      goal[axis] += sign * offset;
+      for (const count of counts) {
+        const next = attempt(goal, count);
+        if (next) return next;
+      }
+    }
+  }
+  return null;
 }
 
 function positionStep(session, walk, accepted, direction, travel) {
-  const { state, joint, index, origin, threshold, count, feet } = walk;
+  const { state, joint, index, origin, count, feet } = walk;
   const target = jointPosition(session, accepted.state, joint);
   target[index] = origin[index] + direction * travel;
+  if (joint !== 'Hips' && walk.counts) return autoPositionStep(session, walk, accepted, direction, target);
   const candidate = copyState(accepted.state);
   if (joint === 'Hips') {
     candidate.hips[index] = (state.hips?.[index] ?? 0) + direction * travel;
@@ -184,14 +232,10 @@ function positionStep(session, walk, accepted, direction, travel) {
   else {
     pullJoint(session, candidate, joint, target, count);
   }
-  const actual = jointPosition(session, candidate, joint);
-  const requested = direction * (target[index] - accepted.value);
-  if (direction * (actual[index] - accepted.value) < Math.min(0.001, requested * 0.2) - 1e-10 ||
-      contactDepth(session, candidate) > threshold + 1e-10) return null;
-  return { state: candidate, value: actual[index] };
+  return acceptPosition(session, walk, accepted, direction, target, candidate);
 }
 
-function walkPosition(session, state, options, direction, distance) {
+function* positionSteps(session, state, options, direction, distance) {
   const walk = positionWalk(session, state, options);
   const cap = Math.min(walk.limit, distance);
   let accepted = { state: copyState(state), value: walk.origin[walk.index] };
@@ -203,15 +247,41 @@ function walkPosition(session, state, options, direction, distance) {
     if (!next) break;
     accepted = next;
     if (travel >= cap) break;
+    yield;
   }
   return accepted;
 }
+function walkPosition(session, state, options, direction, distance) {
+  const steps = positionSteps(session, state, options, direction, distance);
+  let next;
+  do { next = steps.next(); } while (!next.done);
+  return next.value;
+}
 export function positionRange(session, state, options) {
-  const value = jointPosition(session, state, options.joint)[axisIndex(options.axis)];
-  try {
-    return { min: walkPosition(session, state, options, -1, Infinity).value,
-      max: walkPosition(session, state, options, 1, Infinity).value, value };
-  } finally { session.apply(state); }
+  return createRangeTask(session, state, options).run(Infinity);
+}
+export function createRangeTask(session, state, options) {
+  function* rangeSteps() {
+    const value = jointPosition(session, state, options.joint)[axisIndex(options.axis)];
+    const min = (yield* positionSteps(session, state, options, -1, Infinity)).value;
+    const max = (yield* positionSteps(session, state, options, 1, Infinity)).value;
+    return { min, max, value };
+  }
+  const steps = rangeSteps();
+  let result = null;
+  return {
+    run(budgetMs) {
+      try {
+        if (result) return result;
+        const deadline = performance.now() + Math.max(0, budgetMs);
+        do {
+          const next = steps.next();
+          if (next.done) { result = next.value; return result; }
+        } while (budgetMs === Infinity || performance.now() < deadline);
+        return null;
+      } finally { session.apply(state); }
+    },
+  };
 }
 export function moveJoint(session, state, options) {
   if (!Number.isFinite(options.value)) throw new Error('位置は有限の数にしてください');

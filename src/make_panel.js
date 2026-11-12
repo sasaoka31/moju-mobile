@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { POSE_JOINTS, POSE_AXES, createPoseSession, positionRange, angleRange,
+import { POSE_JOINTS, POSE_AXES, createPoseSession, createRangeTask, angleRange,
   createMoveGesture, rotateJoint, upperJoint, mirrorState, jointPosition } from './pose_editor.mjs';
 import { defaultCustomMotion, normalizeCustomMotion, addMiddleKey, removeKey,
   moveKey, setKeyState, stateAt } from './custom_motion.mjs';
@@ -19,10 +19,11 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
   panel.classList.add('make-panel');
   const hasOverlay = !!viewer && !!camera;
   let active = false, selectedName = null, keyIndex = 0, joint = 'Hips';
-  let mode = 'position', axis = 'x', chain = 2, pinFeet = true, upper = 0;
+  let mode = 'position', axis = 'x', chain = 'auto', pinFeet = true, upper = 0;
   let session = null, paramsKey = '', formMode = null;
   let rangeInput, rangeOutput, rangeLimits, rangeHint, undoButton;
   let gesture = null, pendingValue = null, frame = null;
+  let rangeTask = null, rangeTimer = null, rangeReady = true;
   let menuOpen = false, settingsOpen = false, viewingTime = null;
   let showJoints = true;
   try { showJoints = localStorage.getItem('moju.mobile.showJoints') !== 'false'; } catch {}
@@ -39,6 +40,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     const params = getState().params;
     const nextKey = JSON.stringify(params);
     if (!session || paramsKey !== nextKey) {
+      cancelRangeTask();
       session?.dispose();
       session = createPoseSession(params);
       paramsKey = nextKey;
@@ -82,12 +84,23 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     keyIndex = Math.min(index, motion().keys.length - 1);
     notify(); showPose(); render();
   }
+  function cancelRangeTask() {
+    if (rangeTimer !== null) { clearTimeout(rangeTimer); rangeTimer = null; }
+    rangeTask = null;
+  }
   function refreshRange() {
+    cancelRangeTask();
     if (!rangeInput || !motion() || !active) return;
-    const range = (mode === 'position' ? positionRange : angleRange)(ensureSession(), keyState(), options());
+    const currentSession = ensureSession(), state = keyState(), currentOptions = options();
     const factor = mode === 'position' ? 100 : 1;
     const unit = mode === 'position' ? 'cm' : '度';
     const display = value => `${(value * factor).toFixed(1)} ${unit}`;
+    const value = mode === 'position'
+      ? jointPosition(currentSession, state, currentOptions.joint)[['x', 'y', 'z'].indexOf(axis)]
+      : null;
+    const limit = joint === 'Hips' ? 0.5 : 0.8;
+    const range = mode === 'position' ? { min: value - limit, max: value + limit, value }
+      : angleRange(currentSession, state, currentOptions);
     rangeInput.min = String(range.min);
     rangeInput.max = String(range.max);
     rangeInput.value = String(range.value);
@@ -96,13 +109,38 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     rangeOutput.value = display(range.value);
     rangeLimits.replaceChildren(node('span', display(range.min)), node('span', display(range.max)));
     rangeHint.hidden = !rangeInput.disabled;
+    rangeReady = mode === 'angle';
+    if (rangeReady) return;
+    rangeLimits.replaceChildren(node('span', '計算中…'));
+    const task = createRangeTask(currentSession, state, currentOptions);
+    rangeTask = task;
+    function advanceRange() {
+      rangeTimer = null;
+      if (rangeTask !== task) return;
+      const result = task.run(8);
+      if (!result) {
+        rangeTimer = setTimeout(() => guard(advanceRange), 0);
+        return;
+      }
+      rangeTask = null;
+      rangeReady = true;
+      rangeInput.min = String(result.min);
+      rangeInput.max = String(result.max);
+      rangeInput.disabled = Math.abs(result.max - result.min) < 1e-8;
+      rangeLimits.replaceChildren(node('span', display(result.min)), node('span', display(result.max)));
+      rangeHint.hidden = !rangeInput.disabled;
+    }
+    rangeTimer = setTimeout(() => guard(advanceRange), 0);
   }
   function applyPending() {
     frame = null;
     if (pendingValue === null || !motion()) return;
     const value = pendingValue;
     pendingValue = null;
-    if (!gesture) gesture = { motion: copy(motion()), keyIndex, options: options() };
+    if (!gesture) {
+      cancelRangeTask();
+      gesture = { motion: copy(motion()), keyIndex, options: options() };
+    }
     const base = gesture.motion.keys[gesture.keyIndex];
     const currentSession = ensureSession();
     if (mode === 'position' && (!gesture.move || gesture.session !== currentSession)) {
@@ -204,6 +242,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     input.focus();
   }
   function render() {
+    cancelRangeTask();
     panel.replaceChildren(node('h2', '作る', 'make-visually-hidden'));
     rangeInput = null;
     const current = motion();
@@ -303,8 +342,8 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     }
     if (mode === 'position') {
       if (joint === 'Hips') check(followers, '足を床に付けたまま', pinFeet, value => { pinFeet = value; controlsChanged(); });
-      else select(followers, '付いてくる関節', [1, 2, 3].map(value => [value, `${value} 個上まで`]), chain,
-        value => { chain = Number(value); controlsChanged(); }, 'make-chain');
+      else select(followers, '付いてくる関節', [['auto', '自動(順に上へ)'], ...[1, 2, 3].map(value => [value, `${value} 個上まで`])], chain,
+        value => { chain = value === 'auto' ? value : Number(value); controlsChanged(); }, 'make-chain');
     }
     const sliderLabel = node('label', 'いまの数字', 'make-visually-hidden'); sliderLabel.htmlFor = 'make-pose-value';
     rangeOutput = node('output'); rangeOutput.htmlFor = 'make-pose-value';
@@ -312,6 +351,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     rangeInput = node('input');
     Object.assign(rangeInput, { id: 'make-pose-value', type: 'range', step: 'any' });
     rangeInput.addEventListener('input', () => {
+      cancelRangeTask();
       pendingValue = Number(rangeInput.value);
       if (frame === null) frame = requestAnimationFrame(() => guard(applyPending));
     });
@@ -401,13 +441,19 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     showPose(); render(); updateOverlay();
   }
   return {
-    setActive(value) { finishGesture(); active = value; if (active) refresh(); updateOverlay(); },
+    setActive(value) {
+      finishGesture(); active = value;
+      if (active) refresh();
+      else cancelRangeTask();
+      updateOverlay();
+    },
     refresh,
     updateOverlay,
     select: selectJoint,
     seek,
     dispose() {
       active = false;
+      cancelRangeTask();
       finishGesture();
       session?.dispose();
       session = null;
@@ -416,6 +462,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
       panel.classList.remove('make-panel');
     },
     state: () => copy({ active, motion: motion() ?? null, keyIndex, joint, mode, axis, chain, pinFeet,
+      rangeReady: mode === 'angle' || !motion() || rangeReady,
       rotationJoint: targetJoint(), pose: keyState() ?? null, undoCount: history().length, showJoints, viewingTime }),
   };
 }
