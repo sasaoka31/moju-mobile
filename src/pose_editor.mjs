@@ -162,38 +162,49 @@ function restoreFeet(session, state, feet) {
   return true;
 }
 
-function walkPosition(session, state, { joint, axis, chain = 1, pinFeet = true }, direction, distance) {
+function positionWalk(session, state, { joint, axis, chain = 1, pinFeet = true }) {
   const index = axisIndex(axis);
   const origin = jointPosition(session, state, joint);
   const threshold = contactDepth(session, state) + 0.001;
   const count = Math.max(1, Math.min(4, Math.floor(chain) || 1));
-  const cap = Math.min(joint === 'Hips' ? 0.5 : 0.8, distance);
   const feet = joint === 'Hips' && pinFeet ? pinnedFeet(session, state) : null;
-  let accepted = copyState(state), value = origin[index];
+  return { state, joint, index, origin, threshold, count, feet, limit: joint === 'Hips' ? 0.5 : 0.8 };
+}
+
+function positionStep(session, walk, accepted, direction, travel) {
+  const { state, joint, index, origin, threshold, count, feet } = walk;
+  const target = jointPosition(session, accepted.state, joint);
+  target[index] = origin[index] + direction * travel;
+  const candidate = copyState(accepted.state);
+  if (joint === 'Hips') {
+    candidate.hips[index] = (state.hips?.[index] ?? 0) + direction * travel;
+    if (Math.abs(candidate.hips[index]) > 0.5 + 1e-10) return null;
+    if (feet && !restoreFeet(session, candidate, feet)) return null;
+  }
+  else {
+    pullJoint(session, candidate, joint, target, count);
+  }
+  const actual = jointPosition(session, candidate, joint);
+  const requested = direction * (target[index] - accepted.value);
+  if (direction * (actual[index] - accepted.value) < Math.min(0.001, requested * 0.2) - 1e-10 ||
+      contactDepth(session, candidate) > threshold + 1e-10) return null;
+  return { state: candidate, value: actual[index] };
+}
+
+function walkPosition(session, state, options, direction, distance) {
+  const walk = positionWalk(session, state, options);
+  const cap = Math.min(walk.limit, distance);
+  let accepted = { state: copyState(state), value: walk.origin[walk.index] };
   // 端数も最後の1歩として検査する。moveJoint もこの経路を必ず通る。
   for (let step = 1; ; step++) {
     const travel = Math.min(step * 0.005, cap);
     if (travel <= 0) break;
-    const target = jointPosition(session, accepted, joint);
-    target[index] = origin[index] + direction * travel;
-    const candidate = copyState(accepted);
-    if (joint === 'Hips') {
-      candidate.hips[index] = (state.hips?.[index] ?? 0) + direction * travel;
-      if (Math.abs(candidate.hips[index]) > 0.5 + 1e-10) break;
-      if (feet && !restoreFeet(session, candidate, feet)) break;
-    }
-    else {
-      pullJoint(session, candidate, joint, target, count);
-    }
-    const actual = jointPosition(session, candidate, joint);
-    const requested = direction * (target[index] - value);
-    if (direction * (actual[index] - value) < Math.min(0.001, requested * 0.2) - 1e-10 ||
-        contactDepth(session, candidate) > threshold + 1e-10) break;
-    accepted = candidate;
-    value = actual[index];
+    const next = positionStep(session, walk, accepted, direction, travel);
+    if (!next) break;
+    accepted = next;
     if (travel >= cap) break;
   }
-  return { state: accepted, value };
+  return accepted;
 }
 export function positionRange(session, state, options) {
   const value = jointPosition(session, state, options.joint)[axisIndex(options.axis)];
@@ -209,6 +220,42 @@ export function moveJoint(session, state, options) {
   const result = walkPosition(session, state, options, Math.sign(options.value - value), Math.abs(options.value - value)).state;
   session.apply(result);
   return result;
+}
+
+export function createMoveGesture(session, state, options) {
+  const walk = positionWalk(session, copyState(state), options);
+  const origin = walk.origin[walk.index];
+  const initial = { state: copyState(state), value: origin };
+  const sides = new Map([-1, 1].map(direction => [direction, { steps: [initial], stopped: false }]));
+  return {
+    moveTo(value) {
+      if (!Number.isFinite(value)) throw new Error('位置は有限の数にしてください');
+      const direction = Math.sign(value - origin);
+      const cap = Math.min(walk.limit, Math.abs(value - origin));
+      let accepted = initial;
+      if (direction) {
+        const side = sides.get(direction);
+        // 掛け算を walkPosition とそろえ、浮動小数点の境界でも同じ歩数にする。
+        let whole = Math.floor(cap / 0.005);
+        while ((whole + 1) * 0.005 <= cap) whole++;
+        while (whole * 0.005 > cap) whole--;
+        while (side.steps.length <= whole && !side.stopped) {
+          const next = positionStep(session, walk, side.steps[side.steps.length - 1],
+            direction, side.steps.length * 0.005);
+          if (next) side.steps.push(next);
+          else side.stopped = true;
+        }
+        accepted = side.steps[Math.min(whole, side.steps.length - 1)];
+        // 端数での停止は整数歩の停止とは別。次回は直前の整数歩から再計算する。
+        if (whole < side.steps.length && whole * 0.005 < cap) {
+          accepted = positionStep(session, walk, accepted, direction, cap) ?? accepted;
+        }
+      }
+      const result = copyState(accepted.state);
+      session.apply(result);
+      return result;
+    },
+  };
 }
 function walkAngle(session, state, { joint, axis }, direction, destination) {
   checkJoint(session, joint);

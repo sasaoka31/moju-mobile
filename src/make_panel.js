@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import { POSE_JOINTS, POSE_AXES, createPoseSession, positionRange, angleRange,
-  moveJoint, rotateJoint, upperJoint, mirrorState, jointPosition } from './pose_editor.mjs';
+  createMoveGesture, rotateJoint, upperJoint, mirrorState, jointPosition } from './pose_editor.mjs';
 import { defaultCustomMotion, normalizeCustomMotion, addMiddleKey, removeKey,
   moveKey, setKeyState, stateAt } from './custom_motion.mjs';
 
@@ -104,8 +104,13 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     pendingValue = null;
     if (!gesture) gesture = { motion: copy(motion()), keyIndex, options: options() };
     const base = gesture.motion.keys[gesture.keyIndex];
-    const result = (mode === 'position' ? moveJoint : rotateJoint)(ensureSession(), base,
-      { ...gesture.options, value });
+    const currentSession = ensureSession();
+    if (mode === 'position' && (!gesture.move || gesture.session !== currentSession)) {
+      gesture.move = createMoveGesture(currentSession, base, gesture.options);
+      gesture.session = currentSession;
+    }
+    const result = mode === 'position' ? gesture.move.moveTo(value)
+      : rotateJoint(currentSession, base, { ...gesture.options, value });
     replaceMotion(setKeyState(motion(), keyIndex, result));
     showPose();
     const actual = mode === 'position' ? jointPosition(session, result, joint)[['x', 'y', 'z'].indexOf(axis)]
