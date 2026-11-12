@@ -1,0 +1,70 @@
+.make-panel { min-width: 0; color: var(--make-text, inherit); }
+.make-panel *, .make-joint-overlay * { box-sizing: border-box; }
+.make-panel [hidden], .make-joint-overlay[hidden], .make-joint-dot[hidden] { display: none !important; }
+.make-panel button, .make-panel input, .make-panel select, .make-panel output, .make-panel summary { font: inherit; }
+.make-panel button, .make-panel select, .make-panel input[type="text"], .make-panel input[type="number"] {
+  min-height: 44px; min-width: 0; max-width: 100%; padding: 8px 10px;
+  border: 1px solid var(--make-control-border, #a7b5ae); border-radius: 8px;
+  background: var(--make-control, #fffefa); color: inherit;
+}
+.make-panel button { cursor: pointer; touch-action: manipulation; overflow-wrap: anywhere; }
+.make-panel button:disabled { cursor: default; opacity: .6; }
+.make-panel input[type="text"], .make-panel select { width: 100%; }
+.make-panel input[type="range"] { display: block; width: 100%; min-width: 0; height: 44px; margin: 0; padding: 0; accent-color: var(--make-accent, #23765b); }
+.make-panel input[type="checkbox"] { width: 24px; height: 24px; margin: 0; flex-shrink: 0; accent-color: var(--make-accent, #23765b); }
+.make-panel :is(button, input, select, summary):focus-visible { outline: 3px solid var(--make-accent, #23765b); outline-offset: 2px; }
+.make-panel p { margin: 8px 0; overflow-wrap: anywhere; }
+.make-panel details { border: 1px solid var(--make-border, #c4cdc5); border-radius: 8px; background: var(--make-control, #fffefa); margin-top: 6px; }
+.make-panel summary { min-height: 44px; padding: 10px 8px; cursor: pointer; }
+.make-panel .make-primary { background: var(--make-accent, #23765b); border-color: var(--make-accent, #23765b); color: var(--make-primary-text, white); }
+.make-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.make-desktop {
+  --make-text: #e1e5e6; --make-border: #414b50; --make-control-border: #505c61;
+  --make-control: #202428; --make-accent: #5df5ff; --make-selected: #34464c; --make-primary-text: #202428;
+  margin: 16px 0;
+}
+.make-desktop > summary { cursor: pointer; margin-bottom: 12px; }
+.make-section { min-width: 0; border-top: 1px solid var(--make-border, #c4cdc5); padding: 2px 0; }
+.make-section h3 { margin: 0; font-size: 15px; white-space: nowrap; }
+.make-section label { display: block; margin: 0; }
+.make-section .make-check { display: flex; align-items: center; gap: 4px; min-height: 44px; font-size: 12px; cursor: pointer; }
+.make-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 4px 0; }
+.make-actions > button { min-width: 0; padding: 4px; font-size: 13px; }
+.make-motion { border-top: 0; }
+.make-motion-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 4px; }
+.make-motion-row > label { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+.make-motion-row:empty { display: none; }
+.make-motion-menu .make-new { grid-column: 1 / -1; }
+.make-motion-row select { font-size: 14px; padding: 4px 6px; }
+.make-key-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 106px; gap: 4px; }
+.make-keys { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.make-keys button { flex: none; min-width: 44px; white-space: nowrap; padding: 4px 6px; font-size: 13px; }
+.make-preview { padding: 4px; font-size: 12px; white-space: nowrap; }
+.make-key-time { display: grid; grid-template-columns: 44px minmax(0, 1fr) 98px; align-items: center; gap: 4px; position: relative; }
+.make-key-time label { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+.make-key-time output { font-size: 11px; }
+.make-key-time input { grid-column: 2; grid-row: 1; }
+.make-key-time button { font-size: 12px; padding: 4px; }
+.make-pose-heading { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.make-pose-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 2px; }
+.make-field { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.make-field > label { flex: none; font-size: 11px; max-width: 44px; line-height: 1.1; }
+.make-field select { flex: 1; width: 0; font-size: 12px; padding: 4px 0; }
+.make-modes { display: grid; grid-template-columns: 36px 1fr 1fr; gap: 3px; align-items: center; }
+.make-modes > span { font-size: 11px; line-height: 1.1; }
+.make-modes button { padding: 4px; font-size: 14px; }
+.make-slider { position: relative; padding-top: 18px; }
+.make-slider > output { position: absolute; left: 0; top: 0; font-size: 14px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.make-slider .make-limits { position: absolute; top: 35px; left: 0; right: 0; pointer-events: none; }
+.make-panel .make-slider input { padding: 0 38px; }
+.make-explanation { font-size: clamp(9px, 2.66vw, 11px); line-height: 1.3; white-space: nowrap; }
+.make-section > p[role="status"] { margin: 0; font-size: 12px; }
+.make-panel .make-section button[aria-pressed="true"] { background: var(--make-selected, #e3f2e7); border-color: var(--make-accent, #23765b); }
+.make-new { width: 100%; }
+.make-limits { display: flex; justify-content: space-between; font-size: 10px; }
+.make-section input[type="number"] { min-height: 44px; width: 100%; padding: 8px; font: inherit; }
+.make-section small { display: block; }
+.make-joint-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.make-joint-dot { position: absolute; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; background: transparent; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; touch-action: manipulation; }
+.make-joint-dot::after { content: ''; display: block; width: 12px; height: 12px; margin: auto; border: 1px solid var(--make-dot-border, #275e4bb3); border-radius: 50%; background: transparent; }
+.make-joint-dot[aria-pressed="true"]::after { width: 16px; height: 16px; background: var(--make-dot-selected, #ed8428); border-color: var(--make-dot-selected-border, #9b4b13); }
