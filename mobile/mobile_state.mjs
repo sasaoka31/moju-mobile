@@ -1,27 +1,9 @@
-// DOM・three.js なしで保存値を扱う。数値の定義は src/mannequin.mjs と
-// src/motion_tuning.mjs の範囲・初期値に合わせる（画面は元の定義から作る）。
+// 保存値は描画を行わず、素体・動きと同じ定義で正規化する。
+import { MANNEQUIN_COLORS, normalizeParams } from '../src/mannequin.mjs';
+import { normalizeTuning } from '../src/motion_tuning.mjs';
+
 export const STANDARD_NAMES = Object.freeze(['Idle', 'Walk', 'Run', 'Jump', 'Melee', 'Aim', 'Hurt']);
 const STANDARD_LABELS = { Idle: '立つ', Walk: '歩く', Run: '走る', Jump: '跳ぶ', Melee: 'なぐる', Aim: '構える', Hurt: 'やられる' };
-const MALE = {
-  height: 1.5, headW: 1, headH: 1, headD: 1, shoulderW: 1, chestW: 1, waist: 1, hipW: 1,
-  torsoD: 1, torsoLen: 1, bust: 0, armLen: 1, armR: 1, handSize: 1, legLen: 1, legR: 1,
-  footSize: 1, armAngle: 29, blend: 0.03,
-};
-const FEMALE = { ...MALE, height: 1.45, shoulderW: 0.9, chestW: 0.92, waist: 0.84,
-  hipW: 1.04, torsoD: 0.94, bust: 0.02, armR: 0.86, handSize: 0.92, legR: 0.92,
-  footSize: 0.92, armAngle: 27 };
-const PARAM_RANGES = { height: [0.5, 2.5], bust: [0, 0.08], armAngle: [0, 90], blend: [0.01, 0.08] };
-const TUNING_DEFAULTS = {
-  clearance: { strength: 1, margin: 0.01, smooth: 0.1, maxOpen: 40 },
-  keepShape: { torso: 1, head: 1, arms: 0, legs: 0 },
-  ground: { strength: 1, threshold: 0.04, flatten: 1, floor: 0 },
-};
-const TUNING_RANGES = {
-  clearance: { strength: [0, 1], margin: [0, 0.05], smooth: [0, 0.5], maxOpen: [0, 80] },
-  ground: { strength: [0, 1], threshold: [0, 0.2], flatten: [0, 1], floor: [-0.2, 0.2] },
-};
-const JOINTS = new Set(['Hips', 'Spine', 'Chest', 'UpperChest', 'Neck', 'Head',
-  ...['Left', 'Right'].flatMap(side => ['Shoulder', 'UpperArm', 'LowerArm', 'Hand', 'UpperLeg', 'LowerLeg', 'Foot'].map(name => side + name))]);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const number = (value, initial, min, max) => typeof value === 'number' && Number.isFinite(value)
   ? Math.max(min, Math.min(max, value)) : initial;
@@ -35,32 +17,21 @@ export function defaultState() {
 export function normalizeState(value) {
   const input = record(value) ? value : {};
   const preset = input.preset === 'female' ? 'female' : 'male';
-  const base = preset === 'female' ? FEMALE : MALE;
-  const sourceParams = record(input.params) ? input.params : {};
-  const params = Object.fromEntries(Object.entries(base).map(([key, initial]) =>
-    [key, number(sourceParams[key], initial, ...(PARAM_RANGES[key] ?? [0.5, 1.6]))]));
+  const params = normalizeParams(record(input.params) ? input.params : {}, preset);
+  const colors = { part: typeof input.colors?.part === 'string' && /^#[0-9a-f]{6}$/i.test(input.colors.part)
+    ? input.colors.part : MANNEQUIN_COLORS.part };
   const sourceTuning = record(input.tuning) ? input.tuning : {};
-  const tuning = Object.fromEntries(Object.entries(TUNING_DEFAULTS).map(([group, defaults]) => {
-    const source = record(sourceTuning[group]) ? sourceTuning[group] : {};
-    return [group, Object.fromEntries(Object.entries(defaults).map(([key, initial]) =>
-      [key, number(source[key], initial, ...(TUNING_RANGES[group]?.[key] ?? [0, 1]))]))];
-  }));
-  tuning.offsets = {};
-  if (record(sourceTuning.offsets)) {
-    tuning.offsets = Object.fromEntries(Object.entries(sourceTuning.offsets).filter(([name, joints]) =>
-      motionName(name) && record(joints)).flatMap(([name, joints]) => {
-      const entries = Object.entries(joints).filter(([joint, angles]) => JOINTS.has(joint)
-        && Array.isArray(angles) && angles.length === 3).map(([joint, angles]) =>
-        [joint, Array.from(angles, angle => number(angle, 0, -60, 60))])
-        .filter(([, angles]) => angles.some(angle => angle !== 0));
-      return entries.length ? [[name, Object.fromEntries(entries)]] : [];
-    }));
-  }
+  // 古いスマホ版の、不正な角度だけを 0 に戻す扱いを保つ。
+  const offsets = Object.fromEntries(Object.entries(record(sourceTuning.offsets) ? sourceTuning.offsets : {})
+    .filter(([, joints]) => record(joints)).map(([name, joints]) =>
+      [name, Object.fromEntries(Object.entries(joints).map(([joint, angles]) =>
+        [joint, Array.isArray(angles) ? angles.map(angle => Number.isFinite(angle) ? angle : 0) : angles]))]));
+  const tuning = normalizeTuning({ ...sourceTuning, offsets });
   const included = Array.isArray(input.included)
     ? [...new Set(input.included.filter(motionName))] : [...STANDARD_NAMES];
   const name = typeof input.name === 'string'
     ? input.name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').trim().slice(0, 64) || 'moju' : 'moju';
-  return { version: 1, preset, params, tuning, included,
+  return { version: 1, preset, params, colors, tuning, included,
     selectedMotion: motionName(input.selectedMotion) ? input.selectedMotion : 'Idle',
     name, speed: number(input.speed, 1, 0.1, 2) };
 }
@@ -72,6 +43,13 @@ export function serializeState(state) {
 export function parseState(text) {
   try { return normalizeState(JSON.parse(text)); }
   catch { return defaultState(); }
+}
+
+/** ファイルに含まれない調整とチェックは現在の状態から引き継ぐ。 */
+export function applySettingsFile(state, settings) {
+  return normalizeState({ ...state, preset: settings.preset, params: settings.params,
+    colors: { ...state.colors, ...settings.colors },
+    tuning: settings.tuning ?? state.tuning, included: settings.included ?? state.included });
 }
 
 /** 上からの表示順。Quaternius の中には素材ごとの小見出しを持つ。 */

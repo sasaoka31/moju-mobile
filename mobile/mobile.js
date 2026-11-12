@@ -10,7 +10,8 @@ import { mannequinVolumes } from '../src/body_volumes.mjs';
 import { clearArms } from '../src/arm_clearance.mjs';
 import { updateHelpers } from '../src/skin.mjs';
 import { exportGlb } from '../src/export_glb.mjs';
-import { STANDARD_NAMES, defaultState, normalizeState, serializeState, parseState, motionGroups, exportNames } from './mobile_state.mjs';
+import { writeSettingsFile, readSettingsFile } from '../src/settings_file.mjs';
+import { STANDARD_NAMES, defaultState, normalizeState, serializeState, parseState, applySettingsFile, motionGroups, exportNames } from './mobile_state.mjs';
 
 const STORAGE_KEY = 'moju.mobile.v1';
 const SPEEDS = [0.25, 0.5, 1, 2];
@@ -39,7 +40,6 @@ export async function start() {
     clean.speed = SPEEDS.reduce((nearest, speed) => Math.abs(speed - clean.speed) < Math.abs(nearest - clean.speed) ? speed : nearest, 1);
     clean.included = clean.included.filter(name => labels.has(name));
     if (!labels.has(clean.selectedMotion)) clean.selectedMotion = 'Idle';
-    clean.tuning.offsets = Object.fromEntries(Object.entries(clean.tuning.offsets).filter(([name]) => labels.has(name)));
     return clean;
   }
   state = cleanState(state);
@@ -247,7 +247,7 @@ export async function start() {
     status('');
   }
   async function rebuildBody() {
-    const nextBody = buildMannequinBody(normalizeParams(state.params, state.preset));
+    const nextBody = buildMannequinBody(normalizeParams(state.params, state.preset), { colors: state.colors });
     const previous = context?.body;
     if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(previous.group); mixer = null; }
     activeClip = null;
@@ -483,7 +483,7 @@ export async function start() {
   }
   $('#save-settings').addEventListener('click', () => guard(() => {
     clearError();
-    download(new Blob([serializeState(state)], { type: 'application/json' }), `${state.name}.json`);
+    download(new Blob([writeSettingsFile(state)], { type: 'application/json' }), `${state.name}.mojumannequin`);
     status('設定ファイルのダウンロードを開始しました。');
   }));
   $('#load-settings').addEventListener('click', () => $('#settings-file').click());
@@ -492,15 +492,14 @@ export async function start() {
     if (!file) return;
     clearError();
     try {
-      const value = JSON.parse(await file.text());
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('設定の形が正しくありません');
-      Object.assign(state, cleanState(value));
+      const settings = readSettingsFile(await file.text());
+      Object.assign(state, cleanState(applySettingsFile(state, settings)));
       renderBodySettings(); renderTuning();
       for (const [name, check] of rowChecks) check.checked = state.included.includes(name);
       refreshFields(); remember();
       await rebuildBody();
       status('設定ファイルを読み込みました。');
-    } catch (cause) { throw new Error('設定を読み込めませんでした。Moju の設定 JSON を選んでください', { cause }); }
+    } catch (cause) { throw new Error('設定を読み込めませんでした。Moju の .mojumannequin または .json を選んでください', { cause }); }
     finally { $('#settings-file').value = ''; }
   }));
   $('#export-glb').addEventListener('click', () => guard(async () => {
@@ -514,7 +513,7 @@ export async function start() {
     try {
       status('ゲーム用の素体を準備しています…');
       await pauseForPaint();
-      exportBody = buildMannequinBody(snapshot.params);
+      exportBody = buildMannequinBody(snapshot.params, { colors: snapshot.colors });
       const target = makeContext(exportBody, snapshot);
       const clips = [];
       for (const name of names) {
@@ -542,6 +541,14 @@ export async function start() {
     updateExportCount();
   }
   renderBodySettings(); renderTuning(); renderMotions(); refreshFields();
+  // 読めない場合も初期表示の「手元の開発版」を残し、編集を続ける。
+  fetch(new URL('../version.json', import.meta.url), { cache: 'no-store' })
+    .then(response => { if (!response.ok) throw new Error('版を読めません'); return response.json(); })
+    .then(version => {
+      if (typeof version.builtAt !== 'string' || !Number.isFinite(Date.parse(version.builtAt)) ||
+          typeof version.commit !== 'string') return;
+      $('#site-version').textContent = `版: ${version.builtAt.slice(0, 10)} (${version.commit})`;
+    }).catch(() => {});
   if (state.selectedMotion.startsWith('q')) { showTab('motion'); quaterniusDetails.open = true; }
   resize();
   let previousFrame = null;
