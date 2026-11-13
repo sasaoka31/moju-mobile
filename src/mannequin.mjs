@@ -342,17 +342,37 @@ function armSurface(p, joints, band) {
   cap.push({ t: -radius * 0.55, w: radius * 0.16, d: radius * 0.16, z: 0 });
   const sections = [];
   const rows = sampleRows([...cap, ...controls], S * 0.0015, bandStops(cuts, band));
-  for (const row of rows.slice(1, -1)) sections.push({ c: origin.clone().addScaledVector(axis, row.t).add(V(0, 0, row.z)),
-    u, v, w: row.w, d: row.d });
+  const inward = joints.LeftShoulder.clone().sub(origin).normalize();
+  // sweep は球冠の先端から肩へ進むので、輪の進行方向は -inward。
+  const capRotation = new THREE.Quaternion().setFromUnitVectors(axis, inward.clone().negate());
+  const capEnd = cap.at(-2).t, stemEnd = cap.at(-1).t;
+  for (const row of rows.slice(1, -1)) {
+    if (row.t >= 0) {
+      sections.push({ c: origin.clone().addScaledVector(axis, row.t).add(V(0, 0, row.z)),
+        u, v, w: row.w, d: row.d });
+      continue;
+    }
+    // 球冠と軸は鎖骨側へ向け、接続区間で最初の輪の向きへ滑らかに戻す。
+    const blend = ease(stemEnd, 0, row.t);
+    const rotation = new THREE.Quaternion().slerp(capRotation, 1 - blend);
+    const direction = axis.clone().applyQuaternion(rotation);
+    const capRadius = Math.sqrt(Math.max(0, radius * radius - row.t * row.t));
+    // 中心は胴内側に長く留め、肩の上へ膨らまずに元の軸へ接続する。
+    const centerBlend = blend * blend;
+    const center = origin.clone().addScaledVector(inward, -row.t * (1 - centerBlend))
+      .addScaledVector(axis, row.t * centerBlend).add(V(0, 0, row.z));
+    sections.push({ c: center, ...frame(direction),
+      w: row.t <= capEnd ? capRadius : row.w, d: row.t <= capEnd ? capRadius : row.d });
+  }
   const last = rows.at(-1);
   return {
-    shape: sweep(origin.clone().addScaledVector(axis, -radius), sections,
+    shape: sweep(origin.clone().addScaledVector(inward, radius), sections,
       origin.clone().addScaledVector(axis, last.t).add(V(0, 0, last.z))),
-    weights: point => {
-      const t = point.clone().sub(origin).dot(axis);
-      if (t >= 0) return chainWeights(t, cuts, band);
+    weights: (point, i) => {
+      const row = i === 0 ? rows[0] : rows[Math.min(Math.floor((i - 1) / AROUND) + 1, rows.length - 1)];
+      if (row.t >= 0) return chainWeights(point.clone().sub(origin).dot(axis), cuts, band);
       // 胴内の球冠と軸は鎖骨から独立させ、肩の輪まで上腕へ滑らかに渡す。
-      const armWeight = ease(-radius * 0.55, 0, t);
+      const armWeight = ease(stemEnd, 0, row.t);
       return [[3, 1 - armWeight], [0, armWeight]];
     },
   };

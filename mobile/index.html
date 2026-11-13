@@ -74,6 +74,17 @@
           <button id="load-settings" type="button">設定を読み込む</button>
           <input id="settings-file" type="file" accept=".mojumannequin,.json,application/json" hidden>
         </div>
+        <section class="page-sharing" aria-labelledby="share-heading">
+          <h3 id="share-heading">このページを送る・別のブラウザで開く</h3>
+          <label for="share-url">このページの住所</label>
+          <input id="share-url" type="text" readonly>
+          <div class="share-actions">
+            <button id="share-page" type="button" hidden>共有する</button>
+            <button id="copy-url" type="button">住所をコピー</button>
+          </div>
+          <p id="share-status" role="status" aria-live="polite"></p>
+          <p><small>作った体や動きは、開いたブラウザごとに別々に覚えます。別のブラウザや別の人に渡すときは「設定をファイルに保存」で作ったファイルを、相手側の「設定を読み込む」で開いてください。</small></p>
+        </section>
         <p><small id="site-version">版: 手元の開発版</small></p>
       </section>
     </div>

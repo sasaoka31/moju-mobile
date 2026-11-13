@@ -13,7 +13,7 @@ import { exportGlb } from '../src/export_glb.mjs';
 import { writeSettingsFile, readSettingsFile } from '../src/settings_file.mjs';
 import { buildCustomClip } from '../src/custom_motion.mjs';
 import { createMobileMake } from './mobile_make.js';
-import { STANDARD_NAMES, defaultState, normalizeState, serializeState, parseState, applySettingsFile, motionGroups, exportNames } from './mobile_state.mjs';
+import { STANDARD_NAMES, defaultState, normalizeState, serializeState, parseState, applySettingsFile, motionGroups, exportNames, pageAddress } from './mobile_state.mjs';
 
 const STORAGE_KEY = 'moju.mobile.v1';
 const SPEEDS = [0.25, 0.5, 1, 2];
@@ -27,6 +27,43 @@ const element = (tag, text, className) => {
 const pauseForPaint = () => new Promise(resolve => setTimeout(resolve, 0));
 
 export async function start() {
+  const address = pageAddress(window.location);
+  const shareUrl = $('#share-url');
+  const shareStatus = $('#share-status');
+  shareUrl.value = address;
+  shareUrl.addEventListener('click', () => shareUrl.select());
+  $('#share-page').hidden = typeof navigator.share !== 'function';
+  $('#share-page').addEventListener('click', async () => {
+    shareStatus.textContent = '';
+    try {
+      await navigator.share({ title: 'Moju スマホ版', url: address });
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        shareStatus.textContent = '共有できませんでした。住所をコピーして送ってください。';
+      }
+    }
+  });
+  $('#copy-url').addEventListener('click', async () => {
+    shareStatus.textContent = '';
+    let copied = false;
+    try {
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(address);
+        copied = true;
+      }
+    } catch { /* クリップボードが使えない場合は選択してコピーを試す。 */ }
+    if (!copied) {
+      try {
+        shareUrl.focus();
+        shareUrl.select();
+        copied = document.execCommand('copy');
+      } catch { /* 手動でコピーする案内を表示する。 */ }
+    }
+    shareStatus.textContent = copied
+      ? 'コピーしました。送りたい相手や、別のブラウザの住所の欄に貼り付けてください。'
+      : 'コピーできませんでした。上の住所を長押ししてコピーしてください。';
+  });
+
   let state;
   try { state = parseState(localStorage.getItem(STORAGE_KEY)); }
   catch { state = defaultState(); }

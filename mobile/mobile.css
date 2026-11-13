@@ -50,6 +50,10 @@ summary { min-height: 44px; padding: 10px 8px; line-height: 1.4; cursor: pointer
 .primary { background: #23765b; border-color: #23765b; color: white; }
 #panel-export button, .settings-files { width: 100%; }
 .settings-files { display: grid; gap: 12px; margin: 24px 0; }
+.page-sharing { min-width: 0; border-top: 1px solid #a7b5ae; padding-top: 16px; overflow-wrap: anywhere; }
+.page-sharing h3 { margin: 0 0 12px; font-size: 18px; }
+.share-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 12px 0; }
+.share-actions button { min-width: 0; }
 #tabs { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); background: #f6f3eb; border-top: 1px solid #c4cdc5; }
 #tabs button { padding: 8px 1px; min-width: 0; min-height: 44px; line-height: 1.25; }
 #tabs button[aria-selected="true"] { background: #23765b; color: white; border-color: #23765b; }

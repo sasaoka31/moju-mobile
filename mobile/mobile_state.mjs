@@ -16,6 +16,10 @@ const customList = value => {
   return [...new Map(motions.map(motion => [motion.name, motion])).values()].slice(0, 50);
 };
 
+export function pageAddress(location) {
+  return location.origin + location.pathname.replace(/\/index\.html$/, '/');
+}
+
 export function defaultState() {
   return normalizeState({});
 }
