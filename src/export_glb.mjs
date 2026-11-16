@@ -112,6 +112,9 @@ export function buildExportScene(body, clips, { name } = {}) {
     sourceSkeleton.boneInverses.map(inverse => inverse.clone()),
   );
   skeleton.pose();
+  for (const { bone, object } of body.attachments ?? []) {
+    copies.get(body.bones[bone]).add(object.clone());
+  }
   for (const source of body.meshes) {
     const material = new MeshStandardMaterial();
     if (source.material?.color) material.color.copy(source.material.color);

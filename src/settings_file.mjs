@@ -27,15 +27,17 @@ export function readSettingsFile(text) {
   }, data);
 }
 
-export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face }) {
+export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear }) {
   const data = { version: 1, preset, params, colors };
   if (face !== undefined) data.face = face;
+  if (headgear !== undefined) data.headgear = headgear;
   if (tuning !== undefined) data.tuning = tuning;
   if (included !== undefined) data.included = included;
   if (custom !== undefined) data.custom = custom;
   const clean = readSettingsFile(JSON.stringify(data));
   return JSON.stringify({ version: 1, preset: clean.preset, params: clean.params, colors: clean.colors,
     ...(face !== undefined ? { face: clean.face } : {}),
+    ...(headgear !== undefined ? { headgear: clean.headgear } : {}),
     ...(tuning !== undefined ? { tuning: clean.tuning } : {}),
     ...(included !== undefined ? { included: clean.included } : {}),
     ...(custom !== undefined ? { custom: clean.custom } : {}) }, null, 2);
@@ -47,6 +49,13 @@ function normalizeCustomList(value) {
 }
 
 function withCustom(settings, data) {
+  const headgearPresent = Object.hasOwn(data, 'headgear');
+  Object.defineProperty(settings, 'headgear', {
+    value: headgearPresent ? Object.fromEntries(Object.entries(record(data.headgear) ? data.headgear : {})
+      .filter(([key, value]) => key === 'id' ? value === null || typeof value === 'string'
+        : typeof value === 'number' && Number.isFinite(value))) : null,
+    enumerable: headgearPresent, writable: true, configurable: true,
+  });
   const facePresent = Object.hasOwn(data, 'face');
   // 未指定の項目は列挙せず、古い設定を複写する呼び出し側との互換性を保つ。
   Object.defineProperty(settings, 'face', {
