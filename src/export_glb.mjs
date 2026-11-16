@@ -1,5 +1,5 @@
 import {
-  Bone, MeshStandardMaterial, PropertyBinding, Quaternion, QuaternionKeyframeTrack,
+  Bone, MeshBasicMaterial, MeshStandardMaterial, PropertyBinding, Quaternion, QuaternionKeyframeTrack,
   Scene, Skeleton, SkinnedMesh,
 } from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -119,6 +119,14 @@ export function buildExportScene(body, clips, { name } = {}) {
     const material = new MeshStandardMaterial();
     if (source.material?.color) material.color.copy(source.material.color);
     if (source.material?.map) material.map = source.material.map;
+    const mesh = new SkinnedMesh(source.geometry.clone(), material);
+    mesh.name = source.name;
+    scene.add(mesh);
+    mesh.bind(skeleton, source.bindMatrix);
+  }
+  for (const source of body.outlines ?? []) {
+    const material = new MeshBasicMaterial();
+    material.color.copy(source.material.color);
     const mesh = new SkinnedMesh(source.geometry.clone(), material);
     mesh.name = source.name;
     scene.add(mesh);

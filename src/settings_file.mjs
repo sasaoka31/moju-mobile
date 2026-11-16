@@ -27,10 +27,11 @@ export function readSettingsFile(text) {
   }, data);
 }
 
-export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear }) {
+export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear, outline }) {
   const data = { version: 1, preset, params, colors };
   if (face !== undefined) data.face = face;
   if (headgear !== undefined) data.headgear = headgear;
+  if (outline !== undefined) data.outline = outline;
   if (tuning !== undefined) data.tuning = tuning;
   if (included !== undefined) data.included = included;
   if (custom !== undefined) data.custom = custom;
@@ -38,6 +39,7 @@ export function writeSettingsFile({ preset, params, colors, tuning, included, cu
   return JSON.stringify({ version: 1, preset: clean.preset, params: clean.params, colors: clean.colors,
     ...(face !== undefined ? { face: clean.face } : {}),
     ...(headgear !== undefined ? { headgear: clean.headgear } : {}),
+    ...(outline !== undefined ? { outline: clean.outline } : {}),
     ...(tuning !== undefined ? { tuning: clean.tuning } : {}),
     ...(included !== undefined ? { included: clean.included } : {}),
     ...(custom !== undefined ? { custom: clean.custom } : {}) }, null, 2);
@@ -49,6 +51,12 @@ function normalizeCustomList(value) {
 }
 
 function withCustom(settings, data) {
+  const outlinePresent = Object.hasOwn(data, 'outline');
+  Object.defineProperty(settings, 'outline', {
+    value: outlinePresent ? Object.fromEntries(Object.entries(record(data.outline) ? data.outline : {})
+      .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) : null,
+    enumerable: outlinePresent, writable: true, configurable: true,
+  });
   const headgearPresent = Object.hasOwn(data, 'headgear');
   Object.defineProperty(settings, 'headgear', {
     value: headgearPresent ? Object.fromEntries(Object.entries(record(data.headgear) ? data.headgear : {})
