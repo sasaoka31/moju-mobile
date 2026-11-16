@@ -115,6 +115,7 @@ export function buildExportScene(body, clips, { name } = {}) {
   for (const source of body.meshes) {
     const material = new MeshStandardMaterial();
     if (source.material?.color) material.color.copy(source.material.color);
+    if (source.material?.map) material.map = source.material.map;
     const mesh = new SkinnedMesh(source.geometry.clone(), material);
     mesh.name = source.name;
     scene.add(mesh);

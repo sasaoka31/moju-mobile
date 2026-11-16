@@ -27,13 +27,15 @@ export function readSettingsFile(text) {
   }, data);
 }
 
-export function writeSettingsFile({ preset, params, colors, tuning, included, custom }) {
+export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face }) {
   const data = { version: 1, preset, params, colors };
+  if (face !== undefined) data.face = face;
   if (tuning !== undefined) data.tuning = tuning;
   if (included !== undefined) data.included = included;
   if (custom !== undefined) data.custom = custom;
   const clean = readSettingsFile(JSON.stringify(data));
   return JSON.stringify({ version: 1, preset: clean.preset, params: clean.params, colors: clean.colors,
+    ...(face !== undefined ? { face: clean.face } : {}),
     ...(tuning !== undefined ? { tuning: clean.tuning } : {}),
     ...(included !== undefined ? { included: clean.included } : {}),
     ...(custom !== undefined ? { custom: clean.custom } : {}) }, null, 2);
@@ -45,6 +47,13 @@ function normalizeCustomList(value) {
 }
 
 function withCustom(settings, data) {
+  const facePresent = Object.hasOwn(data, 'face');
+  // 未指定の項目は列挙せず、古い設定を複写する呼び出し側との互換性を保つ。
+  Object.defineProperty(settings, 'face', {
+    value: facePresent ? Object.fromEntries(Object.entries(record(data.face) ? data.face : {})
+      .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) : null,
+    enumerable: facePresent, writable: true, configurable: true,
+  });
   const present = Object.hasOwn(data, 'custom');
   // 古い呼び出し側が列挙・複写する項目は保つ。未指定でも .custom は null。
   return Object.defineProperty(settings, 'custom', {
