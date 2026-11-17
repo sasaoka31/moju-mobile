@@ -2,6 +2,7 @@
 // 形は目標の絵を測った断面表。身長・角度・胸のふくらみ以外は基準形への倍率。
 import * as THREE from 'three';
 import { MANNEQUIN_BASE as BASE } from './mannequin_base.mjs';
+import { addBodyUV } from './body_uv.mjs';
 
 const info = (group, label, description, min, max, step) => Object.freeze({ group, label, description, min, max, step });
 
@@ -41,6 +42,28 @@ export const MANNEQUIN_PRESETS = Object.freeze({
 });
 
 export const MANNEQUIN_COLORS = Object.freeze({ part: '#e4d5ac' });
+
+export const MANNEQUIN_COLOR_PARTS = Object.freeze([
+  { key: 'head', label: '頭', meshes: ['頭'] },
+  { key: 'torso', label: '胴', meshes: ['胴'] },
+  { key: 'arms', label: '腕', meshes: ['左腕', '右腕'] },
+  { key: 'legs', label: '脚', meshes: ['左脚', '右脚'] },
+]);
+
+const validColor = value => typeof value === 'string' && value.length === 7 && /^#[0-9a-f]{6}$/i.test(value);
+
+export function partColor(colors, key) {
+  return validColor(colors?.[key]) ? colors[key]
+    : validColor(colors?.part) ? colors.part : MANNEQUIN_COLORS.part;
+}
+
+export function normalizeColors(input) {
+  const colors = { part: validColor(input?.part) ? input.part : MANNEQUIN_COLORS.part };
+  for (const { key } of MANNEQUIN_COLOR_PARTS) {
+    if (validColor(input?.[key])) colors[key] = input[key];
+  }
+  return colors;
+}
 
 /** 足りない項目は初期値、範囲外は端の値、知らない項目は捨てる。 */
 export function normalizeParams(input, preset = 'male') {
@@ -455,7 +478,11 @@ export function buildMannequinBody(input, { colors = MANNEQUIN_COLORS } = {}) {
   const band = p.blend * p.height;
   const arm = armSurface(p, jointPoints, band), leg = legSurface(p, jointPoints, band);
   const surfaces = [headSurface(p, band), torsoSurface(p, jointPoints, band), arm, mirrorSurface(arm), leg, mirrorSurface(leg)];
-  const material = new THREE.MeshStandardMaterial({ color: colors.part ?? MANNEQUIN_COLORS.part, roughness: 0.75 });
+  const materials = new Map();
+  for (const { key, meshes: names } of MANNEQUIN_COLOR_PARTS) {
+    const material = new THREE.MeshStandardMaterial({ color: partColor(colors, key), roughness: 0.75 });
+    for (const name of names) materials.set(name, material);
+  }
   const meshes = MANNEQUIN_PARTS.map(({ name, chain }, partIndex) => {
     const surface = surfaces[partIndex];
     const geometry = toGeometry(surface.shape);
@@ -473,7 +500,7 @@ export function buildMannequinBody(input, { colors = MANNEQUIN_COLORS } = {}) {
     }
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeight, 4));
-    const mesh = new THREE.SkinnedMesh(geometry, material);
+    const mesh = new THREE.SkinnedMesh(addBodyUV(geometry), materials.get(name));
     mesh.name = name;
     mesh.userData.chain = [...chain];
     group.add(mesh);

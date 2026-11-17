@@ -1,5 +1,5 @@
 // 保存値は描画を行わず、素体・動きと同じ定義で正規化する。
-import { MANNEQUIN_COLORS, normalizeParams } from '../src/mannequin.mjs';
+import { normalizeColors, normalizeParams } from '../src/mannequin.mjs';
 import { normalizeTuning } from '../src/motion_tuning.mjs';
 import { normalizeCustomMotion } from '../src/custom_motion.mjs';
 
@@ -28,8 +28,7 @@ export function normalizeState(value) {
   const input = record(value) ? value : {};
   const preset = input.preset === 'female' ? 'female' : 'male';
   const params = normalizeParams(record(input.params) ? input.params : {}, preset);
-  const colors = { part: typeof input.colors?.part === 'string' && /^#[0-9a-f]{6}$/i.test(input.colors.part)
-    ? input.colors.part : MANNEQUIN_COLORS.part };
+  const colors = normalizeColors(input.colors);
   const sourceTuning = record(input.tuning) ? input.tuning : {};
   // 古いスマホ版の、不正な角度だけを 0 に戻す扱いを保つ。
   const offsets = Object.fromEntries(Object.entries(record(sourceTuning.offsets) ? sourceTuning.offsets : {})
@@ -42,6 +41,8 @@ export function normalizeState(value) {
   const name = typeof input.name === 'string'
     ? input.name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').trim().slice(0, 64) || 'moju' : 'moju';
   return { version: 1, preset, params, colors, tuning, included, custom: customList(input.custom),
+    ...(Object.hasOwn(input, 'surface') ? { surface: Object.fromEntries(Object.entries(record(input.surface) ? input.surface : {})
+      .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) } : {}),
     selectedMotion: motionName(input.selectedMotion) ? input.selectedMotion : 'Idle',
     name, speed: number(input.speed, 1, 0.1, 2) };
 }
@@ -58,6 +59,7 @@ export function parseState(text) {
 /** ファイルに含まれない調整とチェックは現在の状態から引き継ぐ。 */
 export function applySettingsFile(state, settings) {
   return normalizeState({ ...state, preset: settings.preset, params: settings.params,
+    ...(settings.surface != null ? { surface: settings.surface } : {}),
     colors: { ...state.colors, ...settings.colors },
     tuning: settings.tuning ?? state.tuning, included: settings.included ?? state.included,
     custom: settings.custom == null ? state.custom : customList([...customList(state.custom), ...customList(settings.custom)]) });

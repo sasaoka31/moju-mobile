@@ -1,5 +1,6 @@
 import { normalizeTuning } from './motion_tuning.mjs';
 import { normalizeCustomMotion } from './custom_motion.mjs';
+import { MANNEQUIN_COLOR_PARTS } from './mannequin.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const formatError = () => new Error('体型の形式またはバージョンが対応していません');
@@ -19,19 +20,21 @@ export function readSettingsFile(text) {
     preset: data.preset,
     params: Object.fromEntries(Object.entries(record(data.params) ? data.params : {})
       .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))),
-    colors: typeof data.colors?.part === 'string' && /^#[0-9a-f]{6}$/i.test(data.colors.part)
-      ? { part: data.colors.part } : {},
+    colors: Object.fromEntries(['part', ...MANNEQUIN_COLOR_PARTS.map(({ key }) => key)]
+      .filter(key => typeof data.colors?.[key] === 'string' && data.colors[key].length === 7 && /^#[0-9a-f]{6}$/i.test(data.colors[key]))
+      .map(key => [key, data.colors[key]])),
     tuning: Object.hasOwn(data, 'tuning') ? normalizeTuning(data.tuning) : null,
     included: Object.hasOwn(data, 'included')
       ? [...new Set((Array.isArray(data.included) ? data.included : []).filter(name => typeof name === 'string'))] : null,
   }, data);
 }
 
-export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear, outline }) {
+export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear, outline, surface }) {
   const data = { version: 1, preset, params, colors };
   if (face !== undefined) data.face = face;
   if (headgear !== undefined) data.headgear = headgear;
   if (outline !== undefined) data.outline = outline;
+  if (surface !== undefined) data.surface = surface;
   if (tuning !== undefined) data.tuning = tuning;
   if (included !== undefined) data.included = included;
   if (custom !== undefined) data.custom = custom;
@@ -40,6 +43,7 @@ export function writeSettingsFile({ preset, params, colors, tuning, included, cu
     ...(face !== undefined ? { face: clean.face } : {}),
     ...(headgear !== undefined ? { headgear: clean.headgear } : {}),
     ...(outline !== undefined ? { outline: clean.outline } : {}),
+    ...(surface !== undefined ? { surface: clean.surface } : {}),
     ...(tuning !== undefined ? { tuning: clean.tuning } : {}),
     ...(included !== undefined ? { included: clean.included } : {}),
     ...(custom !== undefined ? { custom: clean.custom } : {}) }, null, 2);
@@ -51,6 +55,12 @@ function normalizeCustomList(value) {
 }
 
 function withCustom(settings, data) {
+  const surfacePresent = Object.hasOwn(data, 'surface');
+  Object.defineProperty(settings, 'surface', {
+    value: surfacePresent ? Object.fromEntries(Object.entries(record(data.surface) ? data.surface : {})
+      .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) : null,
+    enumerable: surfacePresent, writable: true, configurable: true,
+  });
   const outlinePresent = Object.hasOwn(data, 'outline');
   Object.defineProperty(settings, 'outline', {
     value: outlinePresent ? Object.fromEntries(Object.entries(record(data.outline) ? data.outline : {})
