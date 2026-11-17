@@ -41,6 +41,9 @@ export function normalizeState(value) {
   const name = typeof input.name === 'string'
     ? input.name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').trim().slice(0, 64) || 'moju' : 'moju';
   return { version: 1, preset, params, colors, tuning, included, custom: customList(input.custom),
+    ...(Object.hasOwn(input, 'facegear') ? { facegear: Object.fromEntries(Object.entries(record(input.facegear) ? input.facegear : {})
+      .filter(([key, value]) => key === 'id' ? value === null || typeof value === 'string'
+        : typeof value === 'number' && Number.isFinite(value))) } : {}),
     ...(Object.hasOwn(input, 'surface') ? { surface: Object.fromEntries(Object.entries(record(input.surface) ? input.surface : {})
       .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))) } : {}),
     selectedMotion: motionName(input.selectedMotion) ? input.selectedMotion : 'Idle',
@@ -59,6 +62,7 @@ export function parseState(text) {
 /** ファイルに含まれない調整とチェックは現在の状態から引き継ぐ。 */
 export function applySettingsFile(state, settings) {
   return normalizeState({ ...state, preset: settings.preset, params: settings.params,
+    ...(settings.facegear != null ? { facegear: settings.facegear } : {}),
     ...(settings.surface != null ? { surface: settings.surface } : {}),
     colors: { ...state.colors, ...settings.colors },
     tuning: settings.tuning ?? state.tuning, included: settings.included ?? state.included,

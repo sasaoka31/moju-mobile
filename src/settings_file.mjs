@@ -29,10 +29,11 @@ export function readSettingsFile(text) {
   }, data);
 }
 
-export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear, outline, surface }) {
+export function writeSettingsFile({ preset, params, colors, tuning, included, custom, face, headgear, facegear, outline, surface }) {
   const data = { version: 1, preset, params, colors };
   if (face !== undefined) data.face = face;
   if (headgear !== undefined) data.headgear = headgear;
+  if (facegear !== undefined) data.facegear = facegear;
   if (outline !== undefined) data.outline = outline;
   if (surface !== undefined) data.surface = surface;
   if (tuning !== undefined) data.tuning = tuning;
@@ -42,6 +43,7 @@ export function writeSettingsFile({ preset, params, colors, tuning, included, cu
   return JSON.stringify({ version: 1, preset: clean.preset, params: clean.params, colors: clean.colors,
     ...(face !== undefined ? { face: clean.face } : {}),
     ...(headgear !== undefined ? { headgear: clean.headgear } : {}),
+    ...(facegear !== undefined ? { facegear: clean.facegear } : {}),
     ...(outline !== undefined ? { outline: clean.outline } : {}),
     ...(surface !== undefined ? { surface: clean.surface } : {}),
     ...(tuning !== undefined ? { tuning: clean.tuning } : {}),
@@ -73,6 +75,13 @@ function withCustom(settings, data) {
       .filter(([key, value]) => key === 'id' ? value === null || typeof value === 'string'
         : typeof value === 'number' && Number.isFinite(value))) : null,
     enumerable: headgearPresent, writable: true, configurable: true,
+  });
+  const facegearPresent = Object.hasOwn(data, 'facegear');
+  Object.defineProperty(settings, 'facegear', {
+    value: facegearPresent ? Object.fromEntries(Object.entries(record(data.facegear) ? data.facegear : {})
+      .filter(([key, value]) => key === 'id' ? value === null || typeof value === 'string'
+        : typeof value === 'number' && Number.isFinite(value))) : null,
+    enumerable: facegearPresent, writable: true, configurable: true,
   });
   const facePresent = Object.hasOwn(data, 'face');
   // 未指定の項目は列挙せず、古い設定を複写する呼び出し側との互換性を保つ。
