@@ -3,6 +3,7 @@ import { POSE_JOINTS, POSE_AXES, createPoseSession, createRangeTask, angleRange,
   createMoveGesture, rotateJoint, upperJoint, mirrorState, jointPosition } from './pose_editor.mjs';
 import { defaultCustomMotion, normalizeCustomMotion, addMiddleKey, removeKey,
   moveKey, setKeyState, stateAt } from './custom_motion.mjs';
+import { POLISH_INFO, DEFAULT_POLISH, RECOMMENDED_POLISH, normalizePolish } from './motion_polish.mjs';
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const standing = () => ({ pose: {}, hips: [0, 0, 0] });
@@ -24,7 +25,7 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
   let rangeInput, rangeOutput, rangeLimits, rangeHint, undoButton;
   let gesture = null, pendingValue = null, frame = null;
   let rangeTask = null, rangeTimer = null, rangeReady = true;
-  let menuOpen = false, settingsOpen = false, viewingTime = null;
+  let menuOpen = false, settingsOpen = false, polishOpen = false, viewingTime = null;
   let showJoints = true;
   try { showJoints = localStorage.getItem('moju.mobile.showJoints') !== 'false'; } catch {}
   const histories = new Map();
@@ -402,6 +403,34 @@ export function createMakePanel({ panel, viewer, camera, getState, getBody, onPo
     settings.append(node('small', '最後のポーズを最初と同じにして、つなぎ目をなくします'));
     select(settings, '速さの付き方', [['ease', 'ゆっくり始まりゆっくり止まる'], ['linear', '一定']], current.ease,
       ease => edit({ ...motion(), ease }), 'make-ease');
+    const polishBox = node('details', undefined, 'make-settings make-polish'); polishBox.open = polishOpen;
+    polishBox.append(node('summary', '動きを仕上げる')); panel.append(polishBox);
+    polishBox.addEventListener('toggle', () => { polishOpen = polishBox.open; });
+    const polish = node('div', undefined, 'make-section'); polishBox.append(polish);
+    polish.append(node('p', '置いたポーズはそのままで、体の重さや勢いを自動で足します。0 にすると元の動きです'));
+    const strengths = normalizePolish(current.polish);
+    for (const [key, info] of Object.entries(POLISH_INFO)) {
+      const row = node('div', undefined, 'make-polish-row');
+      const label = node('label', info.label); label.htmlFor = `make-polish-${key}`;
+      const output = node('output', strengths[key].toFixed(2)); output.htmlFor = label.htmlFor;
+      const input = node('input');
+      Object.assign(input, { id: label.htmlFor, type: 'range', min: info.min, max: info.max,
+        step: info.step, value: strengths[key] });
+      input.addEventListener('input', () => guard(() => {
+        output.value = Number(input.value).toFixed(2);
+      }));
+      input.addEventListener('change', () => guard(() => {
+        const value = Number(input.value);
+        edit({ ...motion(), polish: normalizePolish({ ...motion().polish, [key]: value }) });
+      }));
+      row.append(label, output, input, node('small', info.description));
+      button(row, '初期値に戻す', () => edit({ ...motion(),
+        polish: normalizePolish({ ...motion().polish, [key]: DEFAULT_POLISH[key] }) }));
+      polish.append(row);
+    }
+    const polishActions = node('div', undefined, 'make-actions'); polish.append(polishActions);
+    button(polishActions, 'おすすめの強さにする', () => edit({ ...motion(), polish: normalizePolish(RECOMMENDED_POLISH) }));
+    button(polishActions, '全部 0 に戻す', () => edit({ ...motion(), polish: normalizePolish(DEFAULT_POLISH) }));
     refreshRange();
     const selectedKey = keyRow.querySelector('[aria-pressed="true"]');
     if (selectedKey) keyRow.scrollLeft = selectedKey.offsetLeft - keyRow.offsetLeft;

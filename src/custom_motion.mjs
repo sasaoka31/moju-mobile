@@ -1,6 +1,7 @@
 import { AnimationClip, Euler, Quaternion, QuaternionKeyframeTrack, VectorKeyframeTrack, MathUtils } from 'three';
 import { mannequinJoints } from './mannequin.mjs';
 import { clampPose } from './joint_limits.mjs';
+import { normalizePolish, polishFrames } from './motion_polish.mjs';
 
 export const CUSTOM_PREFIX = 'u/';
 const jointNames = new Set(mannequinJoints().filter(j => j.name !== 'Root').map(j => j.name));
@@ -18,6 +19,7 @@ const cleanState = value => ({
 
 export function defaultCustomMotion(name) {
   return { name: cleanName(name), label: '自分で作る動き', duration: 1, loop: false, ease: 'ease',
+    polish: normalizePolish(),
     keys: [0, 1].map(t => ({ t, pose: {}, hips: [0, 0, 0] })) };
 }
 
@@ -28,10 +30,11 @@ export function normalizeCustomMotion(value) {
     label: typeof value.label === 'string' && value.label.trim() ? value.label : '自分で作る動き',
     duration: Number.isFinite(value.duration) ? bound(value.duration, 0.2, 10) : 1,
     loop: value.loop === true, ease: value.ease === 'linear' ? 'linear' : 'ease',
+    polish: normalizePolish(value.polish),
   };
   const keys = (Array.isArray(value.keys) ? value.keys : []).filter(key => record(key) && Number.isFinite(key.t))
     .map(key => ({ t: bound(key.t, 0, result.duration), ...cleanState(key) })).sort((a, b) => a.t - b.t);
-  if (!keys.length) return defaultCustomMotion(result.name);
+  if (!keys.length) return { ...defaultCustomMotion(result.name), polish: result.polish };
   if (keys.length === 1) keys.push({ t: result.duration, ...copyState(keys[0]) });
   // 有限の時間内に収まるだけ中間を残し、両端の姿勢を必ず保つ。
   const middle = keys.slice(1, -1).slice(0, Math.floor(result.duration / 0.01 + 1e-8) - 1);
@@ -125,6 +128,19 @@ export function buildCustomClip(motion, joints, { fps = 30 } = {}) {
     const state = interpolate(normalized, i === times.length - 1 ? duration : times[i]);
     for (const [name, output] of rotations) rotation(state.pose[name] ?? [0, 0, 0]).toArray(output, output.length);
     positions.push(...state.hips.map((v, axis) => v + hipsRest[axis]));
+  }
+  if (Object.values(normalized.polish).some(value => value > 0)) {
+    const frames = times.map((_, i) => ({
+      rotations: new Map([...rotations].map(([name, values]) => [name, values.slice(i * 4, i * 4 + 4)])),
+      hips: positions.slice(i * 3, i * 3 + 3),
+    }));
+    const polished = polishFrames(frames, joints, normalized.polish, { fps, loop: normalized.loop });
+    for (const [name, values] of rotations) {
+      values.length = 0;
+      for (const frame of polished) values.push(...frame.rotations.get(name));
+    }
+    positions.length = 0;
+    for (const frame of polished) positions.push(...frame.hips);
   }
   return new AnimationClip(`${CUSTOM_PREFIX}${normalized.name}`, duration, [
     ...[...rotations].map(([name, output]) => new QuaternionKeyframeTrack(`${name}.quaternion`, times, output)),
