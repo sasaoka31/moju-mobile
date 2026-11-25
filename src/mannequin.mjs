@@ -155,7 +155,7 @@ export const MANNEQUIN_PARTS = Object.freeze([
 ]);
 
 // export_glb.mjs・skin.mjs と同じ [中間関節, 親, 回転元]。人形の部品は使わないが、書き出しと動きが同じ骨格を前提にしている。
-const HELPER_DEFS = [
+export const HELPER_DEFS = [
   ['LeftKneeMid', 'LeftUpperLeg', 'LeftLowerLeg'],
   ['RightKneeMid', 'RightUpperLeg', 'RightLowerLeg'],
   ['LeftElbowMid', 'LeftUpperArm', 'LeftLowerArm'],
